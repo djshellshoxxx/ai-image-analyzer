@@ -3,101 +3,168 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Image Provenance Analyzer</title>
+<title>PROVENANCE — AI Image Forensics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Archivo:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0f1419;
-    --panel: #1a2129;
-    --border: #2c3742;
-    --text: #d8dee6;
-    --muted: #8494a5;
-    --green: #3fb950;
-    --red: #f85149;
-    --amber: #d29922;
-    --blue: #58a6ff;
+    --ink: #101418;
+    --paper: #e8e4da;
+    --paper-dim: #ddd8cc;
+    --line: #b8b2a2;
+    --accent: #0f62fe;
+    --ai: #c1121f;
+    --clean: #1a7431;
+    --warn: #b07d10;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --disp: 'Archivo', system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
+  html { background: var(--ink); }
   body {
-    margin: 0; padding: 24px;
-    background: var(--bg); color: var(--text);
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    margin: 0; min-height: 100vh;
+    background: var(--paper); color: var(--ink);
+    font-family: var(--mono); font-size: 14px; line-height: 1.5;
+    max-width: 980px; margin-inline: auto;
+    border-left: 1px solid #000; border-right: 1px solid #000;
   }
-  .wrap { max-width: 900px; margin: 0 auto; }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
+  header {
+    padding: 28px 32px 20px;
+    border-bottom: 3px solid var(--ink);
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .brand { font-family: var(--disp); font-weight: 900; font-size: clamp(1.6rem, 4vw, 2.4rem); letter-spacing: -0.02em; line-height: 1; }
+  .brand span { color: var(--accent); }
+  .tagline { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: #555; text-align: right; }
+  main { padding: 0 32px 48px; }
+
+  /* -- dropzone as an evidence bag -- */
   #drop {
-    border: 2px dashed var(--border); border-radius: 10px;
-    padding: 40px; text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s;
-    color: var(--muted);
+    display: block; width: 100%;
+    margin-top: 28px; padding: 44px 24px;
+    border: 2px dashed var(--ink); background: var(--paper-dim);
+    text-align: center; cursor: pointer; position: relative;
+    transition: background .15s;
   }
-  #drop.over { border-color: var(--blue); background: #16202c; }
+  #drop:hover, #drop.over { background: #d2ecd8; }
+  #drop.over { border-style: solid; border-color: var(--accent); }
+  #drop .big { font-family: var(--disp); font-weight: 700; font-size: 1.1rem; }
+  #drop .small { font-size: 12px; color: #555; margin-top: 6px; }
   #drop input { display: none; }
-  .verdict {
-    margin-top: 20px; padding: 16px 20px; border-radius: 10px;
-    font-size: 1.05rem; font-weight: 600; display: none;
+  #drop::before {
+    content: "EXHIBIT INTAKE"; position: absolute; top: -9px; left: 16px;
+    background: var(--paper); padding: 0 8px;
+    font-size: 10px; letter-spacing: 0.2em; font-weight: 600;
   }
-  .verdict.ai   { display: block; background: #2d1214; border: 1px solid var(--red);   color: var(--red); }
-  .verdict.none { display: block; background: #12261a; border: 1px solid var(--green); color: var(--green); }
-  .verdict.warn { display: block; background: #2b2211; border: 1px solid var(--amber); color: var(--amber); }
-  .verdict small { display: block; font-weight: 400; color: var(--text); margin-top: 6px; font-size: 0.85rem; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; margin-top: 16px; overflow: hidden;
+
+  /* -- verdict stamp -- */
+  #verdict-wrap { display: none; margin-top: 32px; gap: 24px; align-items: center; }
+  #verdict-wrap.show { display: flex; flex-wrap: wrap; }
+  #preview {
+    max-width: 180px; max-height: 180px;
+    border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink);
   }
-  .card h2 {
-    font-size: 0.8rem; text-transform: uppercase; letter-spacing: .08em;
-    margin: 0; padding: 10px 16px; color: var(--muted);
-    border-bottom: 1px solid var(--border); background: #151c24;
+  .stamp {
+    font-family: var(--disp); font-weight: 900; text-transform: uppercase;
+    font-size: clamp(1.3rem, 3.5vw, 2rem); letter-spacing: 0.04em;
+    padding: 10px 22px; border: 4px solid; display: inline-block;
+    transform: rotate(-2deg);
   }
-  .card .body { padding: 12px 16px; font-size: 0.88rem; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid #222c36; }
-  td:first-child { color: var(--muted); white-space: nowrap; width: 220px; }
-  tr:last-child td { border-bottom: none; }
-  .flag { color: var(--red); font-weight: 600; }
-  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.82rem; word-break: break-all; }
-  #preview { max-width: 220px; max-height: 220px; border-radius: 8px; border: 1px solid var(--border); display: none; margin-top: 16px; }
-  .empty { color: var(--muted); font-style: italic; }
-  #results { display: none; }
-  .note { margin-top: 20px; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+  .stamp.ai    { color: var(--ai); border-color: var(--ai); }
+  .stamp.clean { color: var(--clean); border-color: var(--clean); }
+  .stamp.warn  { color: var(--warn); border-color: var(--warn); }
+  .verdict-sub { margin-top: 12px; font-size: 12.5px; max-width: 520px; }
+  .verdict-sub b { font-weight: 800; }
+
+  /* -- report sections -- */
+  #report { display: none; margin-top: 36px; }
+  section { margin-top: 28px; }
+  section > h2 {
+    font-family: var(--disp); font-weight: 900; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.16em;
+    margin: 0 0 0; padding-bottom: 6px;
+    border-bottom: 2px solid var(--ink);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  section > h2 .count { font-family: var(--mono); font-weight: 400; font-size: 11px; color: #555; letter-spacing: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 7px 10px 7px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  td.k { color: #444; width: 230px; padding-right: 18px; }
+  td.flag { color: var(--ai); font-weight: 600; }
+  tr:hover td { background: rgba(15,98,254,0.05); }
+  .empty { color: #777; font-style: italic; padding: 10px 0; font-size: 13px; }
+  .wordbreak { word-break: break-all; }
+
+  /* -- toolbar -- */
+  #toolbar { display: none; margin-top: 24px; gap: 10px; }
+  #toolbar.show { display: flex; flex-wrap: wrap; }
+  button.tool {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+    background: var(--ink); color: var(--paper); border: none;
+    padding: 10px 18px; cursor: pointer;
+  }
+  button.tool:hover { background: var(--accent); }
+  button.tool:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  footer {
+    margin-top: 48px; padding: 20px 32px 32px;
+    border-top: 3px solid var(--ink);
+    font-size: 11.5px; color: #555; line-height: 1.7;
+  }
+  footer b { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>AI Image Provenance Analyzer</h1>
-  <div class="sub">Client-side only — files never leave your browser. Checks C2PA / Content Credentials, AI tool metadata, and EXIF.</div>
 
+<header>
+  <div class="brand">PROVENANCE<span>_</span></div>
+  <div class="tagline">AI image forensics · C2PA · EXIF · XMP<br>100% client-side — nothing is uploaded</div>
+</header>
+
+<main>
   <label id="drop">
-    Drop an image here or click to choose (PNG / JPEG / WebP)
+    <div class="big">Drop an image or click to open</div>
+    <div class="small">PNG · JPEG · WebP — analyzed locally in your browser</div>
     <input type="file" id="file" accept="image/*">
   </label>
 
-  <img id="preview" alt="preview">
-
-  <div id="verdict" class="verdict"></div>
-
-  <div id="results">
-    <div class="card"><h2>AI / Provenance Indicators</h2><div class="body" id="ai-body"></div></div>
-    <div class="card"><h2>C2PA Manifest Details</h2><div class="body" id="c2pa-body"></div></div>
-    <div class="card"><h2>EXIF Data</h2><div class="body" id="exif-body"></div></div>
-    <div class="card"><h2>Text / XMP Metadata</h2><div class="body" id="text-body"></div></div>
-    <div class="card"><h2>File Structure</h2><div class="body" id="struct-body"></div></div>
+  <div id="verdict-wrap">
+    <img id="preview" alt="Exhibit preview">
+    <div>
+      <div id="stamp" class="stamp"></div>
+      <div id="verdict-sub" class="verdict-sub"></div>
+    </div>
   </div>
 
-  <div class="note">
-    <b>Important:</b> absence of AI metadata does <i>not</i> prove an image is real. Screenshots, social-media re-encodes,
-    and simple re-saves strip C2PA and EXIF entirely. Presence of a signed C2PA manifest with
-    <i>trainedAlgorithmicMedia</i> is strong evidence of AI generation; absence proves nothing.
+  <div id="toolbar">
+    <button class="tool" id="copy-report">Copy report</button>
+    <button class="tool" id="dl-report">Download report (.txt)</button>
   </div>
-</div>
+
+  <div id="report">
+    <section><h2>AI / Provenance indicators <span class="count" id="c-ai"></span></h2><div id="ai-body"></div></section>
+    <section><h2>C2PA manifest <span class="count" id="c-c2pa"></span></h2><div id="c2pa-body"></div></section>
+    <section><h2>EXIF <span class="count" id="c-exif"></span></h2><div id="exif-body"></div></section>
+    <section><h2>Text / XMP metadata <span class="count" id="c-text"></span></h2><div id="text-body"></div></section>
+    <section><h2>File structure <span class="count" id="c-struct"></span></h2><div id="struct-body"></div></section>
+  </div>
+</main>
+
+<footer>
+  <b>Read the negative result carefully.</b> Absence of AI metadata does not prove authenticity —
+  screenshots, social-media re-encodes, and plain re-saves strip C2PA and EXIF completely.
+  A signed C2PA manifest carrying <b>trainedAlgorithmicMedia</b> is strong evidence of AI generation;
+  a clean scan proves nothing either way.
+</footer>
 
 <script>
 "use strict";
 
-/* ---------------- UI wiring ---------------- */
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
+let lastReport = '';
+
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => {
@@ -105,45 +172,72 @@ drop.addEventListener('drop', e => {
   if (e.dataTransfer.files.length) analyze(e.dataTransfer.files[0]);
 });
 fileInput.addEventListener('change', () => { if (fileInput.files.length) analyze(fileInput.files[0]); });
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) analyze(item.getAsFile());
+});
+
+document.getElementById('copy-report').addEventListener('click', async (e) => {
+  await navigator.clipboard.writeText(lastReport);
+  e.target.textContent = 'Copied ✓';
+  setTimeout(() => e.target.textContent = 'Copy report', 1500);
+});
+document.getElementById('dl-report').addEventListener('click', () => {
+  const blob = new Blob([lastReport], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'provenance-report.txt';
+  a.click();
+});
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function row(k,v,flag){ return `<tr><td>${esc(k)}</td><td class="${flag?'flag':''}">${esc(v)}</td></tr>`; }
+function row(k,v,flag){ return `<tr><td class="k">${esc(k)}</td><td class="wordbreak ${flag?'flag':''}">${esc(v)}</td></tr>`; }
 function table(rows){ return rows.length ? `<table>${rows.join('')}</table>` : `<div class="empty">None found</div>`; }
+function td(bytes){ return new TextDecoder('utf-8', {fatal:false}).decode(bytes); }
 
-/* ---------------- Main ---------------- */
+/* ============ Main ============ */
 async function analyze(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
+  const ab = await file.arrayBuffer();
+  const buf = new Uint8Array(ab);
+
   const preview = document.getElementById('preview');
   preview.src = URL.createObjectURL(file);
-  preview.style.display = 'block';
 
-  const findings = {
-    aiIndicators: [],   // {label, value, weight}
-    c2pa: [],
-    exif: [],
-    text: [],
-    struct: []
-  };
+  const f = { aiIndicators: [], c2pa: [], exif: [], text: [], struct: [] };
 
-  findings.struct.push(['File name', file.name]);
-  findings.struct.push(['File size', file.size.toLocaleString() + ' bytes']);
+  f.struct.push(['File name', file.name || '(pasted image)']);
+  f.struct.push(['File size', buf.length.toLocaleString() + ' bytes']);
+  f.struct.push(['MIME type', file.type || 'unknown']);
+  if (file.lastModified) f.struct.push(['Last modified (filesystem)', new Date(file.lastModified).toISOString()]);
+
+  // SHA-256 of the file — useful for evidence / dedupe
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', ab);
+    f.struct.push(['SHA-256', [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('')]);
+  } catch(e) {}
+
+  // Pixel dimensions
+  await new Promise(res => {
+    const im = new Image();
+    im.onload = () => { f.struct.push(['Dimensions', `${im.naturalWidth} × ${im.naturalHeight} px`]); res(); };
+    im.onerror = res;
+    im.src = preview.src;
+  });
 
   const isPNG  = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
   const isJPEG = buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8;
   const isWEBP = buf.length > 12 && String.fromCharCode(...buf.slice(0,4)) === 'RIFF' && String.fromCharCode(...buf.slice(8,12)) === 'WEBP';
 
-  if (isPNG)       { findings.struct.push(['Format', 'PNG']);  parsePNG(buf, findings); }
-  else if (isJPEG) { findings.struct.push(['Format', 'JPEG']); parseJPEG(buf, findings); }
-  else if (isWEBP) { findings.struct.push(['Format', 'WebP']); parseWEBP(buf, findings); }
-  else             { findings.struct.push(['Format', 'Unknown / unsupported']); }
+  if (isPNG)       { f.struct.push(['Format', 'PNG']);  parsePNG(buf, f); }
+  else if (isJPEG) { f.struct.push(['Format', 'JPEG']); parseJPEG(buf, f); }
+  else if (isWEBP) { f.struct.push(['Format', 'WebP']); parseWEBP(buf, f); }
+  else             { f.struct.push(['Format', 'Unknown / unsupported']); }
 
-  // Whole-file string scan for AI signatures (catches anything the structured parsers miss)
-  scanStrings(buf, findings);
-
-  render(findings);
+  scanStrings(buf, f);
+  render(f, file);
 }
 
-/* ---------------- PNG parsing ---------------- */
+/* ============ PNG ============ */
 function parsePNG(buf, f) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let pos = 8;
@@ -166,11 +260,9 @@ function parsePNG(buf, f) {
     if (c.type === 'caBX') {
       f.aiIndicators.push({ label: 'C2PA chunk (caBX)', value: `Present, ${c.len.toLocaleString()} bytes — Content Credentials manifest embedded`, weight: 1 });
       parseC2PA(data, f);
-    }
-    else if (c.type === 'eXIf') {
+    } else if (c.type === 'eXIf') {
       parseEXIF(data, 0, f);
-    }
-    else if (c.type === 'tEXt' || c.type === 'iTXt' || c.type === 'zTXt') {
+    } else if (c.type === 'tEXt' || c.type === 'iTXt' || c.type === 'zTXt') {
       handlePNGText(c.type, data, f);
     }
   }
@@ -178,28 +270,24 @@ function parsePNG(buf, f) {
 
 function handlePNGText(type, data, f) {
   try {
-    let key, value;
     const nul = data.indexOf(0);
-    key = td(data.slice(0, nul));
-    if (type === 'tEXt') {
-      value = td(data.slice(nul + 1));
-    } else if (type === 'iTXt') {
-      // key \0 compFlag compMethod \0 lang \0 transKey \0 text
+    const key = td(data.slice(0, nul));
+    let value;
+    if (type === 'tEXt') value = td(data.slice(nul + 1));
+    else if (type === 'iTXt') {
       let p = nul + 1;
       const compFlag = data[p]; p += 2;
-      const langEnd = data.indexOf(0, p); p = langEnd + 1;
-      const transEnd = data.indexOf(0, p); p = transEnd + 1;
+      p = data.indexOf(0, p) + 1;   // lang
+      p = data.indexOf(0, p) + 1;   // translated key
       value = compFlag ? '[compressed iTXt]' : td(data.slice(p));
-    } else {
-      value = '[compressed zTXt]';
-    }
-    if (value.length > 400) value = value.slice(0, 400) + '…';
-    f.text.push([key, value]);
+    } else value = '[compressed zTXt]';
     checkTextForAI(key, value, f);
+    if (value.length > 500) value = value.slice(0, 500) + '…';
+    f.text.push([key, value]);
   } catch(e) {}
 }
 
-/* ---------------- JPEG parsing ---------------- */
+/* ============ JPEG ============ */
 function parseJPEG(buf, f) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let pos = 2;
@@ -207,34 +295,32 @@ function parseJPEG(buf, f) {
   while (pos + 4 <= buf.length) {
     if (buf[pos] !== 0xFF) break;
     const marker = buf[pos+1];
-    if (marker === 0xD9 || marker === 0xDA) break; // EOI / SOS
+    if (marker === 0xD9 || marker === 0xDA) break;
     const len = dv.getUint16(pos+2);
-    const dataStart = pos + 4;
-    const data = buf.slice(dataStart, dataStart + len - 2);
-    segs.push({ marker, data });
-
-    if (marker === 0xE1) { // APP1: EXIF or XMP
-      const head = td(data.slice(0, 28));
+    const data = buf.slice(pos+4, pos+4+len-2);
+    segs.push(marker);
+    if (marker === 0xE1) {
+      const head = td(data.slice(0, 32));
       if (head.startsWith('Exif')) parseEXIF(data, 6, f);
-      else if (head.includes('http://ns.adobe.com/xap')) {
+      else if (head.includes('ns.adobe.com/xap')) {
         const xmp = td(data);
-        f.text.push(['XMP packet', xmp.length > 400 ? xmp.slice(0,400)+'…' : xmp]);
         checkTextForAI('XMP', xmp, f);
+        f.text.push(['XMP packet', xmp.length > 500 ? xmp.slice(0,500)+'…' : xmp]);
       }
     }
-    if (marker === 0xEB) { // APP11: JUMBF / C2PA
-      const s = td(data.slice(0, 40));
-      if (s.includes('JP') || s.includes('jumb') || s.includes('c2pa')) {
+    if (marker === 0xEB) {
+      const s = td(data.slice(0, 48));
+      if (s.includes('jumb') || s.includes('c2pa') || s.includes('JP')) {
         f.aiIndicators.push({ label: 'C2PA segment (APP11/JUMBF)', value: `Present, ${data.length.toLocaleString()} bytes`, weight: 1 });
         parseC2PA(data, f);
       }
     }
-    pos = dataStart + len - 2;
+    pos = pos + 4 + len - 2;
   }
-  f.struct.push(['JPEG segments', segs.map(s => 'FF' + s.marker.toString(16).toUpperCase()).join(', ')]);
+  f.struct.push(['JPEG segments', segs.map(m => 'FF' + m.toString(16).toUpperCase()).join(', ')]);
 }
 
-/* ---------------- WebP parsing ---------------- */
+/* ============ WebP ============ */
 function parseWEBP(buf, f) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let pos = 12;
@@ -247,11 +333,11 @@ function parseWEBP(buf, f) {
     if (fourcc === 'EXIF') parseEXIF(data, 0, f);
     if (fourcc === 'XMP ') {
       const xmp = td(data);
-      f.text.push(['XMP packet', xmp.length > 400 ? xmp.slice(0,400)+'…' : xmp]);
       checkTextForAI('XMP', xmp, f);
+      f.text.push(['XMP packet', xmp.length > 500 ? xmp.slice(0,500)+'…' : xmp]);
     }
-    if (fourcc === 'C2PA' || td(data.slice(0,40)).includes('c2pa')) {
-      f.aiIndicators.push({ label: 'C2PA data in WebP chunk ' + fourcc, value: `Present, ${size.toLocaleString()} bytes`, weight: 1 });
+    if (fourcc === 'C2PA' || td(data.slice(0,48)).includes('c2pa')) {
+      f.aiIndicators.push({ label: 'C2PA data in WebP chunk ' + fourcc.trim(), value: `Present, ${size.toLocaleString()} bytes`, weight: 1 });
       parseC2PA(data, f);
     }
     pos += 8 + size + (size & 1);
@@ -259,40 +345,26 @@ function parseWEBP(buf, f) {
   f.struct.push(['WebP chunks', names.join(', ')]);
 }
 
-/* ---------------- C2PA manifest field extraction ---------------- */
-function td(bytes){ return new TextDecoder('utf-8', {fatal:false}).decode(bytes); }
-
+/* ============ C2PA extraction ============ */
 function parseC2PA(data, f) {
   const text = td(data);
 
-  const grab = (re, label, weight) => {
-    const m = text.match(re);
-    if (m) {
-      f.c2pa.push([label, m[1] || m[0]]);
-      if (weight) f.aiIndicators.push({ label, value: m[1] || m[0], weight });
-    }
-    return m;
-  };
-
-  // The single most authoritative field
-  if (text.includes('trainedAlgorithmicMedia')) {
-    f.aiIndicators.push({ label: 'digitalSourceType', value: 'trainedAlgorithmicMedia — IPTC code for AI-generated content', weight: 3 });
-    f.c2pa.push(['digitalSourceType', 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia']);
-  }
   if (text.includes('compositeWithTrainedAlgorithmicMedia')) {
     f.aiIndicators.push({ label: 'digitalSourceType', value: 'compositeWithTrainedAlgorithmicMedia — partially AI-generated / AI-edited', weight: 3 });
+    f.c2pa.push(['digitalSourceType', 'compositeWithTrainedAlgorithmicMedia']);
+  } else if (text.includes('trainedAlgorithmicMedia')) {
+    f.aiIndicators.push({ label: 'digitalSourceType', value: 'trainedAlgorithmicMedia — IPTC code for fully AI-generated content', weight: 3 });
+    f.c2pa.push(['digitalSourceType', 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia']);
   }
 
-  // Actions
-  for (const act of ['c2pa.created','c2pa.converted','c2pa.watermarked.unbound','c2pa.watermarked','c2pa.edited','c2pa.opened','c2pa.placed']) {
+  for (const act of ['c2pa.created','c2pa.converted','c2pa.watermarked.unbound','c2pa.watermarked','c2pa.edited','c2pa.opened','c2pa.placed','c2pa.color_adjustments','c2pa.resized','c2pa.cropped']) {
     if (text.includes(act)) f.c2pa.push(['Action', act]);
   }
   if (text.includes('c2pa.watermarked')) {
-    f.aiIndicators.push({ label: 'Invisible watermark', value: 'c2pa.watermarked action present — pixel-level watermark embedded', weight: 1 });
+    f.aiIndicators.push({ label: 'Invisible watermark', value: 'c2pa.watermarked action — pixel-level watermark embedded', weight: 1 });
   }
 
-  // Software agent / generator names (CBOR text strings are length-prefixed but the names survive as plain ASCII)
-  const knownAgents = [
+  const agents = [
     ['gpt-image', 'OpenAI GPT image model'],
     ['DALL·E', 'OpenAI DALL·E'], ['DALL-E', 'OpenAI DALL·E'],
     ['OpenAI', 'OpenAI'],
@@ -305,37 +377,36 @@ function parseC2PA(data, f) {
     ['Microsoft Designer', 'Microsoft'],
     ['Grok', 'xAI Grok'],
     ['Leonardo', 'Leonardo AI'],
+    ['Photoshop', 'Adobe Photoshop (may include generative fill)'],
   ];
-  for (const [needle, vendor] of knownAgents) {
+  for (const [needle, vendor] of agents) {
     if (text.includes(needle)) {
-      f.aiIndicators.push({ label: 'Generator identified', value: `${needle} (${vendor})`, weight: 2 });
+      f.aiIndicators.push({ label: 'Generator identified', value: `${needle} (${vendor})`, weight: needle === 'Photoshop' ? 1 : 2 });
       f.c2pa.push(['Software agent', needle]);
     }
   }
 
+  const grab = (re, label) => { const m = text.match(re); if (m) f.c2pa.push([label, m[1] || m[0]]); };
   grab(/urn:c2pa:[0-9a-f-]{36}/, 'Manifest ID');
   grab(/xmp:iid:[0-9a-f-]{36}/, 'Instance ID');
   grab(/specVersion.{0,3}(\d+\.\d+\.\d+)/, 'C2PA spec version');
-  grab(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/, 'Timestamp');
+  const times = [...new Set(text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g) || [])];
+  times.forEach(t => f.c2pa.push(['Timestamp', t]));
 
-  // Signer / cert info
-  const certOrgs = text.match(/O=([^,\n\x00-\x1f]{2,60})/g);
-  const orgNames = ['OpenAI OpCo','OpenAI, Inc','Adobe Inc','SSL Corporation','SSL.com','Truepic','DigiCert','Microsoft Corporation','Google LLC'];
-  for (const org of orgNames) {
+  for (const org of ['OpenAI OpCo','OpenAI, Inc','Adobe Inc','SSL Corporation','SSL.com','Truepic','DigiCert','Microsoft Corporation','Google LLC','Sectigo']) {
     if (text.includes(org)) f.c2pa.push(['Certificate / signer mentions', org]);
   }
   if (text.includes('c2pa.signature')) f.c2pa.push(['Signature', 'Cryptographic signature block present']);
-  const genInfo = text.match(/claim_generator[^\x00]{0,4}[\x00-\xff]{0,80}?name..?([\x20-\x7e]{4,50})/);
-  if (genInfo) f.c2pa.push(['Claim generator (raw)', genInfo[1]]);
 }
 
-/* ---------------- EXIF parsing (minimal TIFF/IFD reader) ---------------- */
+/* ============ EXIF ============ */
 const EXIF_TAGS = {
   0x010F:'Make', 0x0110:'Model', 0x0131:'Software', 0x0132:'DateTime',
   0x013B:'Artist', 0x8298:'Copyright', 0x9003:'DateTimeOriginal', 0x9004:'DateTimeDigitized',
   0x829A:'ExposureTime', 0x829D:'FNumber', 0x8827:'ISO', 0x920A:'FocalLength',
   0xA430:'CameraOwnerName', 0xA431:'BodySerialNumber', 0xA434:'LensModel',
-  0x8769:'ExifIFDPointer', 0x8825:'GPSIFDPointer', 0x9286:'UserComment', 0x010E:'ImageDescription'
+  0x9286:'UserComment', 0x010E:'ImageDescription',
+  0x0001:'GPSLatRef', 0x0002:'GPSLatitude', 0x0003:'GPSLonRef', 0x0004:'GPSLongitude'
 };
 
 function parseEXIF(data, offset, f) {
@@ -347,74 +418,80 @@ function parseEXIF(data, offset, f) {
     const g32 = o => dv.getUint32(o, little);
     if (g16(2) !== 0x2A) return;
 
-    const readIFD = (ifdOfs) => {
+    const readIFD = (ifdOfs, depth) => {
+      if (depth > 4 || ifdOfs + 2 > dv.byteLength) return;
       const n = g16(ifdOfs);
       for (let i = 0; i < n; i++) {
         const e = ifdOfs + 2 + i * 12;
+        if (e + 12 > dv.byteLength) return;
         const tag = g16(e), type = g16(e+2), count = g32(e+4);
+        if (tag === 0x8769 || tag === 0x8825) { readIFD(g32(e+8), depth+1); continue; }
         const name = EXIF_TAGS[tag];
-        if (tag === 0x8769 || tag === 0x8825) { readIFD(g32(e+8)); continue; }
         if (!name) continue;
         let val = '';
-        if (type === 2) { // ASCII
-          const size = count;
-          const valOfs = size <= 4 ? e+8 : g32(e+8);
-          val = td(data.slice(offset+valOfs, offset+valOfs+size)).replace(/\0+$/,'');
+        if (type === 2) {
+          const valOfs = count <= 4 ? e+8 : g32(e+8);
+          val = td(data.slice(offset+valOfs, offset+valOfs+count)).replace(/\0+$/,'');
         } else if (type === 3 && count === 1) val = String(g16(e+8));
         else if (type === 4 && count === 1) val = String(g32(e+8));
-        else if (type === 5 && count === 1) { const o = g32(e+8); val = g32(o)+'/'+g32(o+4); }
+        else if (type === 5 && count >= 1) {
+          const o = g32(e+8);
+          const parts = [];
+          for (let j = 0; j < Math.min(count,3); j++) parts.push(g32(o+j*8) + '/' + g32(o+j*8+4));
+          val = parts.join(', ');
+        }
         else val = `[type ${type} × ${count}]`;
         f.exif.push([name, val]);
         checkTextForAI(name, val, f);
       }
     };
-    readIFD(g32(4));
+    readIFD(g32(4), 0);
+    if (f.exif.some(([k]) => k.startsWith('GPSLat'))) {
+      f.exif.push(['⚠ GPS data', 'Location coordinates are embedded in this file']);
+    }
   } catch(e) {}
 }
 
-/* ---------------- Text-based AI signature detection ---------------- */
+/* ============ Text-based AI signatures ============ */
 function checkTextForAI(key, value, f) {
-  const combined = (key + ' ' + value);
+  const combined = key + ' ' + value;
   const sigs = [
     [/stable diffusion/i, 'Stable Diffusion'],
     [/\bComfyUI\b/i, 'ComfyUI (SD workflow tool)'],
     [/AUTOMATIC1111|sd-webui/i, 'Stable Diffusion WebUI'],
     [/Negative prompt:/i, 'SD generation parameters'],
-    [/\bSteps: \d+, Sampler:/i, 'SD generation parameters'],
+    [/Steps: \d+, Sampler:/i, 'SD generation parameters'],
     [/midjourney/i, 'Midjourney'],
     [/DALL[·-]?E/i, 'DALL·E'],
     [/\bNovelAI\b/i, 'NovelAI'],
     [/InvokeAI/i, 'InvokeAI'],
     [/Adobe Firefly/i, 'Adobe Firefly'],
-    [/\bSDXL\b/i, 'SDXL model'],
-    [/dream ?studio/i, 'DreamStudio'],
+    [/\bSDXL\b|\bFlux\.1\b|\bFLUX\b/, 'Diffusion model name'],
     [/trainedAlgorithmicMedia/i, 'IPTC trainedAlgorithmicMedia'],
     [/GenAI|generative.?ai/i, 'Generic GenAI tag'],
   ];
   for (const [re, name] of sigs) {
-    if (re.test(combined)) {
-      f.aiIndicators.push({ label: `AI signature in ${key}`, value: name, weight: 2 });
-    }
+    if (re.test(combined)) f.aiIndicators.push({ label: `AI signature in ${key}`, value: name, weight: 2 });
   }
 }
 
-/* ---------------- Whole-file string scan (fallback) ---------------- */
+/* ============ Fallback whole-file scan ============ */
 function scanStrings(buf, f) {
-  // Only scan first 512KB + last 64KB to keep it fast; metadata lives at the edges
   const head = td(buf.slice(0, 524288));
   const tail = td(buf.slice(Math.max(0, buf.length - 65536)));
   const blob = head + tail;
   if (!f.aiIndicators.some(i => i.label.includes('C2PA')) && /c2pa\.assertions|urn:c2pa:/.test(blob)) {
-    f.aiIndicators.push({ label: 'C2PA strings found (unstructured)', value: 'Manifest data present but not in an expected container location', weight: 1 });
+    f.aiIndicators.push({ label: 'C2PA strings (unstructured)', value: 'Manifest data present outside expected container', weight: 1 });
     parseC2PA(buf, f);
   }
 }
 
-/* ---------------- Render ---------------- */
-function render(f) {
-  document.getElementById('results').style.display = 'block';
+/* ============ Render ============ */
+function render(f, file) {
+  document.getElementById('report').style.display = 'block';
+  document.getElementById('verdict-wrap').classList.add('show');
+  document.getElementById('toolbar').classList.add('show');
 
-  // Dedupe AI indicators
   const seen = new Set();
   const ai = f.aiIndicators.filter(i => {
     const k = i.label + '|' + i.value;
@@ -423,26 +500,51 @@ function render(f) {
   });
   const score = ai.reduce((s,i) => s + i.weight, 0);
 
-  const v = document.getElementById('verdict');
+  const stamp = document.getElementById('stamp');
+  const sub = document.getElementById('verdict-sub');
+  let verdictText;
   if (score >= 3) {
-    v.className = 'verdict ai';
-    v.innerHTML = '🤖 AI-GENERATED — provenance metadata explicitly identifies this image as AI output.' +
-      '<small>Confidence: high (signed/structured metadata found).</small>';
+    stamp.className = 'stamp ai'; stamp.textContent = 'AI-Generated';
+    verdictText = 'Signed provenance metadata explicitly identifies this image as AI output. Confidence: high.';
   } else if (score > 0) {
-    v.className = 'verdict warn';
-    v.innerHTML = '⚠️ POSSIBLE AI INVOLVEMENT — some AI-related metadata found, but no definitive signed manifest.' +
-      '<small>Review the indicators below.</small>';
+    stamp.className = 'stamp warn'; stamp.textContent = 'Possible AI';
+    verdictText = 'Some AI-related metadata found, but no definitive signed manifest. Review indicators below.';
   } else {
-    v.className = 'verdict none';
-    v.innerHTML = '✅ NO AI METADATA FOUND' +
-      '<small>This does not prove the image is authentic — metadata is easily stripped by screenshots and re-encoding.</small>';
+    stamp.className = 'stamp clean'; stamp.textContent = 'No AI Metadata';
+    verdictText = 'No AI provenance data found. This does NOT prove authenticity — metadata is easily stripped.';
   }
+  sub.innerHTML = '<b>' + esc(file.name || 'pasted image') + '</b> — ' + esc(verdictText);
 
-  document.getElementById('ai-body').innerHTML   = table(ai.map(i => row(i.label, i.value, i.weight >= 2)));
-  document.getElementById('c2pa-body').innerHTML = table(dedupe(f.c2pa).map(([k,v2]) => row(k, v2)));
-  document.getElementById('exif-body').innerHTML = table(dedupe(f.exif).map(([k,v2]) => row(k, v2)));
-  document.getElementById('text-body').innerHTML = table(dedupe(f.text).map(([k,v2]) => row(k, v2)));
-  document.getElementById('struct-body').innerHTML = table(f.struct.map(([k,v2]) => row(k, v2)));
+  const put = (id, cid, rows) => {
+    document.getElementById(id).innerHTML = table(rows);
+    document.getElementById(cid).textContent = rows.length ? rows.length + ' entries' : '';
+  };
+  const aiRows = ai.map(i => row(i.label, i.value, i.weight >= 2));
+  put('ai-body', 'c-ai', aiRows);
+  put('c2pa-body', 'c-c2pa', dedupe(f.c2pa).map(([k,v]) => row(k,v)));
+  put('exif-body', 'c-exif', dedupe(f.exif).map(([k,v]) => row(k,v)));
+  put('text-body', 'c-text', dedupe(f.text).map(([k,v]) => row(k,v)));
+  put('struct-body', 'c-struct', f.struct.map(([k,v]) => row(k,v)));
+
+  // Plain-text report for copy/download
+  const lines = [];
+  lines.push('PROVENANCE REPORT — ' + new Date().toISOString());
+  lines.push('Verdict: ' + stamp.textContent.toUpperCase());
+  lines.push('');
+  const sec = (title, arr) => {
+    lines.push('== ' + title + ' ==');
+    if (!arr.length) lines.push('(none)');
+    arr.forEach(([k,v]) => lines.push(k + ': ' + v));
+    lines.push('');
+  };
+  sec('AI / PROVENANCE INDICATORS', ai.map(i => [i.label, i.value]));
+  sec('C2PA MANIFEST', dedupe(f.c2pa));
+  sec('EXIF', dedupe(f.exif));
+  sec('TEXT / XMP', dedupe(f.text));
+  sec('FILE STRUCTURE', f.struct);
+  lastReport = lines.join('\n');
+
+  document.getElementById('verdict-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function dedupe(arr) {
