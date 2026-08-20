@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PROVENANCE — AI Image Forensics</title>
+<title>PROVENANCE V2 — AI Image Forensics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Archivo:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
@@ -15,8 +16,9 @@
     --accent: #0f62fe;
     --ai: #c1121f;
     --clean: #1a7431;
-    --warn: #b07d10;
-    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --warn: #9a6810;
+    --bad: #8b1e3f;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --disp: 'Archivo', system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
@@ -25,7 +27,7 @@
     margin: 0; min-height: 100vh;
     background: var(--paper); color: var(--ink);
     font-family: var(--mono); font-size: 14px; line-height: 1.5;
-    max-width: 980px; margin-inline: auto;
+    max-width: 1040px; margin-inline: auto;
     border-left: 1px solid #000; border-right: 1px solid #000;
   }
   header {
@@ -35,16 +37,14 @@
   }
   .brand { font-family: var(--disp); font-weight: 900; font-size: clamp(1.6rem, 4vw, 2.4rem); letter-spacing: -0.02em; line-height: 1; }
   .brand span { color: var(--accent); }
-  .tagline { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: #555; text-align: right; }
+  .version { font-family: var(--mono); font-size: 11px; margin-left: 8px; color: #555; font-weight: 600; }
+  .tagline { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: #555; text-align: right; }
   main { padding: 0 32px 48px; }
 
-  /* -- dropzone as an evidence bag -- */
   #drop {
-    display: block; width: 100%;
-    margin-top: 28px; padding: 44px 24px;
+    display: block; width: 100%; margin-top: 28px; padding: 44px 24px;
     border: 2px dashed var(--ink); background: var(--paper-dim);
-    text-align: center; cursor: pointer; position: relative;
-    transition: background .15s;
+    text-align: center; cursor: pointer; position: relative; transition: background .15s;
   }
   #drop:hover, #drop.over { background: #d2ecd8; }
   #drop.over { border-style: solid; border-color: var(--accent); }
@@ -53,118 +53,153 @@
   #drop input { display: none; }
   #drop::before {
     content: "EXHIBIT INTAKE"; position: absolute; top: -9px; left: 16px;
-    background: var(--paper); padding: 0 8px;
-    font-size: 10px; letter-spacing: 0.2em; font-weight: 600;
+    background: var(--paper); padding: 0 8px; font-size: 10px; letter-spacing: 0.2em; font-weight: 600;
   }
+  #status { margin-top: 12px; font-size: 11.5px; color: #555; min-height: 18px; }
 
-  /* -- verdict stamp -- */
   #verdict-wrap { display: none; margin-top: 32px; gap: 24px; align-items: center; }
   #verdict-wrap.show { display: flex; flex-wrap: wrap; }
-  #preview {
-    max-width: 180px; max-height: 180px;
-    border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink);
-  }
+  #preview { max-width: 190px; max-height: 190px; border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); object-fit: contain; }
   .stamp {
     font-family: var(--disp); font-weight: 900; text-transform: uppercase;
-    font-size: clamp(1.3rem, 3.5vw, 2rem); letter-spacing: 0.04em;
-    padding: 10px 22px; border: 4px solid; display: inline-block;
-    transform: rotate(-2deg);
+    font-size: clamp(1.15rem, 3.5vw, 1.9rem); letter-spacing: 0.035em;
+    padding: 10px 22px; border: 4px solid; display: inline-block; transform: rotate(-1.5deg);
   }
-  .stamp.ai    { color: var(--ai); border-color: var(--ai); }
+  .stamp.ai { color: var(--ai); border-color: var(--ai); }
   .stamp.clean { color: var(--clean); border-color: var(--clean); }
-  .stamp.warn  { color: var(--warn); border-color: var(--warn); }
-  .verdict-sub { margin-top: 12px; font-size: 12.5px; max-width: 520px; }
+  .stamp.warn { color: var(--warn); border-color: var(--warn); }
+  .stamp.bad { color: var(--bad); border-color: var(--bad); }
+  .verdict-sub { margin-top: 12px; font-size: 12.5px; max-width: 610px; }
   .verdict-sub b { font-weight: 800; }
+  .confidence { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #555; }
 
-  /* -- report sections -- */
-  #report { display: none; margin-top: 36px; }
-  section { margin-top: 28px; }
-  section > h2 {
-    font-family: var(--disp); font-weight: 900; font-size: 13px;
-    text-transform: uppercase; letter-spacing: 0.16em;
-    margin: 0 0 0; padding-bottom: 6px;
-    border-bottom: 2px solid var(--ink);
-    display: flex; justify-content: space-between; align-items: baseline;
-  }
-  section > h2 .count { font-family: var(--mono); font-weight: 400; font-size: 11px; color: #555; letter-spacing: 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  td { padding: 7px 10px 7px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
-  td.k { color: #444; width: 230px; padding-right: 18px; }
-  td.flag { color: var(--ai); font-weight: 600; }
-  tr:hover td { background: rgba(15,98,254,0.05); }
-  .empty { color: #777; font-style: italic; padding: 10px 0; font-size: 13px; }
-  .wordbreak { word-break: break-all; }
-
-  /* -- toolbar -- */
   #toolbar { display: none; margin-top: 24px; gap: 10px; }
   #toolbar.show { display: flex; flex-wrap: wrap; }
   button.tool {
     font-family: var(--mono); font-size: 12.5px; font-weight: 600;
-    background: var(--ink); color: var(--paper); border: none;
-    padding: 10px 18px; cursor: pointer;
+    background: var(--ink); color: var(--paper); border: none; padding: 10px 18px; cursor: pointer;
   }
   button.tool:hover { background: var(--accent); }
   button.tool:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-  footer {
-    margin-top: 48px; padding: 20px 32px 32px;
-    border-top: 3px solid var(--ink);
-    font-size: 11.5px; color: #555; line-height: 1.7;
+  #report { display: none; margin-top: 36px; }
+  section { margin-top: 28px; }
+  section > h2 {
+    font-family: var(--disp); font-weight: 900; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.16em; margin: 0; padding-bottom: 6px;
+    border-bottom: 2px solid var(--ink); display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   }
+  section > h2 .count { font-family: var(--mono); font-weight: 400; font-size: 11px; color: #555; letter-spacing: 0; text-transform: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 7px 10px 7px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  td.k { color: #444; width: 245px; padding-right: 18px; }
+  tr:hover td { background: rgba(15,98,254,0.05); }
+  .empty { color: #777; font-style: italic; padding: 10px 0; font-size: 13px; }
+  .wordbreak { overflow-wrap: anywhere; word-break: break-word; }
+  .evidence { display: grid; grid-template-columns: 112px 1fr; gap: 8px 14px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .badge { display: inline-block; width: fit-content; font-size: 9.5px; line-height: 1; padding: 5px 7px; border: 1px solid; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+  .badge.strong { color: var(--clean); border-color: var(--clean); }
+  .badge.medium { color: var(--warn); border-color: var(--warn); }
+  .badge.supporting { color: #555; border-color: #777; }
+  .badge.invalid { color: var(--bad); border-color: var(--bad); }
+  .ev-title { font-weight: 800; }
+  .ev-value { margin-top: 2px; font-size: 12.5px; }
+  .ev-source { margin-top: 3px; font-size: 10.5px; color: #666; }
+  .warning { padding: 8px 0; border-bottom: 1px solid var(--line); color: #6b4700; }
+  details { border-bottom: 1px solid var(--line); padding: 7px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--paper-dim); padding: 12px; max-height: 420px; overflow: auto; }
+
+  footer { margin-top: 48px; padding: 20px 32px 32px; border-top: 3px solid var(--ink); font-size: 11.5px; color: #555; line-height: 1.7; }
   footer b { color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 650px) { main { padding-inline: 18px; } header { padding-inline: 18px; } td.k { width: 38%; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
-
 <header>
-  <div class="brand">PROVENANCE<span>_</span></div>
-  <div class="tagline">AI image forensics · C2PA · EXIF · XMP<br>100% client-side — nothing is uploaded</div>
+  <div><span class="brand">PROVENANCE<span>_</span></span><span class="version">V2</span></div>
+  <div class="tagline">AI image forensics · validated C2PA · EXIF · IPTC · XMP<br>image bytes stay in your browser</div>
 </header>
 
 <main>
   <label id="drop">
-    <div class="big">Drop an image or click to open</div>
-    <div class="small">PNG · JPEG · WebP — analyzed locally in your browser</div>
-    <input type="file" id="file" accept="image/*">
+    <div class="big">Drop an image, paste, or click to open</div>
+    <div class="small">PNG · JPEG · WebP — analyzed locally; C2PA validator code is fetched from a CDN only when needed</div>
+    <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
   </label>
+  <div id="status" aria-live="polite"></div>
 
   <div id="verdict-wrap">
     <img id="preview" alt="Exhibit preview">
     <div>
       <div id="stamp" class="stamp"></div>
       <div id="verdict-sub" class="verdict-sub"></div>
+      <div id="confidence" class="confidence"></div>
     </div>
   </div>
 
   <div id="toolbar">
     <button class="tool" id="copy-report">Copy report</button>
     <button class="tool" id="dl-report">Download report (.txt)</button>
+    <button class="tool" id="dl-json">Download evidence (.json)</button>
   </div>
 
   <div id="report">
-    <section><h2>AI / Provenance indicators <span class="count" id="c-ai"></span></h2><div id="ai-body"></div></section>
-    <section><h2>C2PA manifest <span class="count" id="c-c2pa"></span></h2><div id="c2pa-body"></div></section>
+    <section><h2>AI / provenance evidence <span class="count" id="c-ai"></span></h2><div id="ai-body"></div></section>
+    <section><h2>C2PA — validated provenance <span class="count" id="c-c2pa"></span></h2><div id="c2pa-body"></div></section>
+    <section><h2>C2PA validation details <span class="count" id="c-validation"></span></h2><div id="validation-body"></div></section>
     <section><h2>EXIF <span class="count" id="c-exif"></span></h2><div id="exif-body"></div></section>
+    <section><h2>IPTC / Photoshop APP13 <span class="count" id="c-iptc"></span></h2><div id="iptc-body"></div></section>
     <section><h2>Text / XMP metadata <span class="count" id="c-text"></span></h2><div id="text-body"></div></section>
     <section><h2>File structure <span class="count" id="c-struct"></span></h2><div id="struct-body"></div></section>
+    <section><h2>Warnings / limitations <span class="count" id="c-warn"></span></h2><div id="warn-body"></div></section>
+    <section><h2>Raw validated C2PA JSON <span class="count" id="c-raw"></span></h2><div id="raw-body"></div></section>
   </div>
 </main>
 
 <footer>
-  <b>Read the negative result carefully.</b> Absence of AI metadata does not prove authenticity —
-  screenshots, social-media re-encodes, and plain re-saves strip C2PA and EXIF completely.
-  A signed C2PA manifest carrying <b>trainedAlgorithmicMedia</b> is strong evidence of AI generation;
-  a clean scan proves nothing either way.
+  <b>Interpret negative results carefully.</b> No metadata-based analyzer can prove that an image is human-made. Screenshots, social-media re-encodes, exports, transcoding, and deliberate metadata removal can destroy provenance. V2 distinguishes cryptographically validated C2PA evidence from ordinary mutable EXIF/XMP/IPTC metadata and from software fingerprints. A C2PA manifest by itself is <b>not</b> treated as evidence of AI generation.
 </footer>
 
 <script>
 "use strict";
 
+/* ============================================================
+   PROVENANCE V2
+   Client-side metadata/provenance analyzer.
+   C2PA validation uses the official @contentauth/c2pa-web SDK.
+   The image itself is never uploaded by this application.
+   ============================================================ */
+
+const C2PA_WEB_VERSION = '0.14.3';
+const C2PA_MODULE_URL = `https://esm.sh/@contentauth/c2pa-web@${C2PA_WEB_VERSION}`;
+const C2PA_WASM_URL = `https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@${C2PA_WEB_VERSION}/dist/resources/c2pa_bg.wasm`;
+const MAX_FILE_BYTES = 512 * 1024 * 1024; // application safety limit; SDK itself supports larger files
+const MAX_PREVIEW_PIXELS = 150_000_000;
+const MAX_DISPLAY_TEXT = 4000;
+
+const DST = Object.freeze({
+  AI_GENERATED: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+  AI_EDITED: 'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia',
+  DIGITAL_CAPTURE: 'http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture',
+  DIGITAL_CREATION: 'http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation',
+  HUMAN_EDITS: 'http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits',
+  ALGO_ENHANCED: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicallyEnhanced',
+  SCREEN_CAPTURE: 'http://cv.iptc.org/newscodes/digitalsourcetype/screenCapture',
+  ALGORITHMIC_MEDIA: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia'
+});
+
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
+const statusEl = document.getElementById('status');
 let lastReport = '';
+let lastJson = null;
+let previewObjectUrl = null;
+let analysisRun = 0;
+let c2paSdkPromise = null;
 
+/* ---------------- UI wiring ---------------- */
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => {
@@ -178,378 +213,824 @@ document.addEventListener('paste', e => {
 });
 
 document.getElementById('copy-report').addEventListener('click', async (e) => {
-  await navigator.clipboard.writeText(lastReport);
-  e.target.textContent = 'Copied ✓';
+  try {
+    await navigator.clipboard.writeText(lastReport);
+    e.target.textContent = 'Copied ✓';
+  } catch {
+    e.target.textContent = 'Copy failed';
+  }
   setTimeout(() => e.target.textContent = 'Copy report', 1500);
 });
-document.getElementById('dl-report').addEventListener('click', () => {
-  const blob = new Blob([lastReport], { type: 'text/plain' });
+document.getElementById('dl-report').addEventListener('click', () => downloadBlob('provenance-v2-report.txt', 'text/plain', lastReport));
+document.getElementById('dl-json').addEventListener('click', () => downloadBlob('provenance-v2-evidence.json', 'application/json', JSON.stringify(lastJson, null, 2)));
+
+function downloadBlob(name, type, contents) {
+  const blob = new Blob([contents], { type });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'provenance-report.txt';
-  a.click();
-});
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function row(k,v,flag){ return `<tr><td class="k">${esc(k)}</td><td class="wordbreak ${flag?'flag':''}">${esc(v)}</td></tr>`; }
-function table(rows){ return rows.length ? `<table>${rows.join('')}</table>` : `<div class="empty">None found</div>`; }
-function td(bytes){ return new TextDecoder('utf-8', {fatal:false}).decode(bytes); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function row(k, v) { return `<tr><td class="k">${esc(k)}</td><td class="wordbreak">${esc(v)}</td></tr>`; }
+function table(rows) { return rows.length ? `<table>${rows.join('')}</table>` : `<div class="empty">None found</div>`; }
+function td(bytes, encoding='utf-8') { try { return new TextDecoder(encoding, {fatal:false}).decode(bytes); } catch { return new TextDecoder('utf-8', {fatal:false}).decode(bytes); } }
+function shortText(s, max=MAX_DISPLAY_TEXT) { s = String(s ?? ''); return s.length > max ? s.slice(0, max) + `… [${(s.length-max).toLocaleString()} more chars]` : s; }
+function hex(bytes) { return [...bytes].map(b => b.toString(16).padStart(2,'0')).join(''); }
+function safeJson(value) { try { return JSON.stringify(value); } catch { return String(value); } }
 
-/* ============ Main ============ */
+function pushUniquePair(arr, k, v) {
+  const key = String(k) + '\u0000' + String(v);
+  if (!arr.some(([a,b]) => String(a) + '\u0000' + String(b) === key)) arr.push([k, v]);
+}
+function addWarning(f, message) { if (!f.warnings.includes(message)) f.warnings.push(message); }
+function addEvidence(f, ev) {
+  const key = [ev.type, ev.value, ev.source, ev.authenticated].join('|');
+  if (!f.evidence.some(x => [x.type, x.value, x.source, x.authenticated].join('|') === key)) f.evidence.push(ev);
+}
+
+/* ---------------- Main analysis ---------------- */
 async function analyze(file) {
-  const ab = await file.arrayBuffer();
+  const run = ++analysisRun;
+  statusEl.textContent = 'Reading file…';
+  resetUI();
+
+  if (!file) return;
+  if (file.size > MAX_FILE_BYTES) {
+    statusEl.textContent = `Refused: file is ${(file.size/1024/1024).toFixed(1)} MiB; V2 application limit is ${MAX_FILE_BYTES/1024/1024} MiB.`;
+    return;
+  }
+
+  let ab;
+  try { ab = await file.arrayBuffer(); }
+  catch (e) { statusEl.textContent = 'Could not read file: ' + e.message; return; }
+  if (run !== analysisRun) return;
   const buf = new Uint8Array(ab);
 
-  const preview = document.getElementById('preview');
-  preview.src = URL.createObjectURL(file);
-
-  const f = { aiIndicators: [], c2pa: [], exif: [], text: [], struct: [] };
+  const f = {
+    evidence: [], c2pa: [], validation: [], exif: [], iptc: [], text: [], struct: [], warnings: [],
+    provenance: {
+      containerDetected: false, referenceDetected: false, sdkAttempted: false, sdkLoaded: false,
+      validationState: null, activeManifest: null, activeSourceTypes: [], ingredientSourceTypes: [], rawStore: null
+    }
+  };
 
   f.struct.push(['File name', file.name || '(pasted image)']);
-  f.struct.push(['File size', buf.length.toLocaleString() + ' bytes']);
-  f.struct.push(['MIME type', file.type || 'unknown']);
+  f.struct.push(['File size', `${buf.length.toLocaleString()} bytes (${(buf.length/1024/1024).toFixed(2)} MiB)`]);
+  f.struct.push(['Browser MIME type', file.type || 'unknown']);
   if (file.lastModified) f.struct.push(['Last modified (filesystem)', new Date(file.lastModified).toISOString()]);
 
-  // SHA-256 of the file — useful for evidence / dedupe
+  statusEl.textContent = 'Hashing and decoding image header…';
   try {
     const digest = await crypto.subtle.digest('SHA-256', ab);
-    f.struct.push(['SHA-256', [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('')]);
-  } catch(e) {}
+    f.struct.push(['SHA-256', hex(new Uint8Array(digest))]);
+  } catch (e) { addWarning(f, 'SHA-256 could not be calculated: ' + e.message); }
 
-  // Pixel dimensions
-  await new Promise(res => {
-    const im = new Image();
-    im.onload = () => { f.struct.push(['Dimensions', `${im.naturalWidth} × ${im.naturalHeight} px`]); res(); };
-    im.onerror = res;
-    im.src = preview.src;
-  });
+  setPreview(file);
+  const dimensions = await getImageDimensions(previewObjectUrl);
+  if (dimensions) {
+    f.struct.push(['Dimensions', `${dimensions.width} × ${dimensions.height} px`]);
+    const pixels = dimensions.width * dimensions.height;
+    f.struct.push(['Pixel count', pixels.toLocaleString()]);
+    if (pixels > MAX_PREVIEW_PIXELS) addWarning(f, `Very large image (${pixels.toLocaleString()} pixels); browser decoding may consume substantial memory.`);
+  } else addWarning(f, 'Browser could not decode image dimensions.');
+  if (run !== analysisRun) return;
 
-  const isPNG  = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-  const isJPEG = buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8;
-  const isWEBP = buf.length > 12 && String.fromCharCode(...buf.slice(0,4)) === 'RIFF' && String.fromCharCode(...buf.slice(8,12)) === 'WEBP';
+  const format = identifyFormat(buf);
+  f.struct.push(['Detected format', format.name]);
+  if (file.type && format.mime && file.type !== format.mime) addWarning(f, `MIME/type mismatch: browser reports ${file.type}, magic bytes identify ${format.mime}.`);
 
-  if (isPNG)       { f.struct.push(['Format', 'PNG']);  parsePNG(buf, f); }
-  else if (isJPEG) { f.struct.push(['Format', 'JPEG']); parseJPEG(buf, f); }
-  else if (isWEBP) { f.struct.push(['Format', 'WebP']); parseWEBP(buf, f); }
-  else             { f.struct.push(['Format', 'Unknown / unsupported']); }
-
+  statusEl.textContent = 'Parsing container and mutable metadata…';
+  try {
+    if (format.id === 'png') await parsePNG(buf, f);
+    else if (format.id === 'jpeg') parseJPEG(buf, f);
+    else if (format.id === 'webp') parseWEBP(buf, f);
+    else addWarning(f, 'Unsupported file structure. Only PNG, JPEG, and WebP are parsed by V2.');
+  } catch (e) {
+    addWarning(f, 'Container parser stopped on malformed or unexpected data: ' + e.message);
+  }
   scanStrings(buf, f);
-  render(f, file);
+  if (run !== analysisRun) return;
+
+  if (f.provenance.containerDetected || f.provenance.referenceDetected) {
+    statusEl.textContent = 'Validating C2PA Content Credentials…';
+    await validateC2PA(file, f);
+  } else {
+    f.c2pa.push(['C2PA', 'No embedded container or provenance reference detected by the raw parser']);
+  }
+  if (run !== analysisRun) return;
+
+  const verdict = evaluateVerdict(f);
+  statusEl.textContent = 'Analysis complete.';
+  render(f, file, verdict);
 }
 
-/* ============ PNG ============ */
-function parsePNG(buf, f) {
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  let pos = 8;
-  const chunks = [];
-  while (pos + 8 <= buf.length) {
-    const len = dv.getUint32(pos);
-    const type = String.fromCharCode(buf[pos+4], buf[pos+5], buf[pos+6], buf[pos+7]);
-    const dataStart = pos + 8;
-    if (dataStart + len > buf.length) break;
-    chunks.push({ type, start: dataStart, len });
-    pos = dataStart + len + 4;
-    if (type === 'IEND') break;
-  }
-  const counts = {};
-  chunks.forEach(c => counts[c.type] = (counts[c.type]||0)+1);
-  f.struct.push(['PNG chunks', Object.entries(counts).map(([k,v]) => v>1?`${k}×${v}`:k).join(', ')]);
+function resetUI() {
+  document.getElementById('report').style.display = 'none';
+  document.getElementById('verdict-wrap').classList.remove('show');
+  document.getElementById('toolbar').classList.remove('show');
+}
 
-  for (const c of chunks) {
-    const data = buf.slice(c.start, c.start + c.len);
-    if (c.type === 'caBX') {
-      f.aiIndicators.push({ label: 'C2PA chunk (caBX)', value: `Present, ${c.len.toLocaleString()} bytes — Content Credentials manifest embedded`, weight: 1 });
-      parseC2PA(data, f);
-    } else if (c.type === 'eXIf') {
-      parseEXIF(data, 0, f);
-    } else if (c.type === 'tEXt' || c.type === 'iTXt' || c.type === 'zTXt') {
-      handlePNGText(c.type, data, f);
+function setPreview(file) {
+  if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+  previewObjectUrl = URL.createObjectURL(file);
+  document.getElementById('preview').src = previewObjectUrl;
+}
+function getImageDimensions(url) {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => resolve({ width: im.naturalWidth, height: im.naturalHeight });
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+function identifyFormat(buf) {
+  if (buf.length >= 8 && [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((v,i)=>buf[i]===v)) return {id:'png', name:'PNG', mime:'image/png'};
+  if (buf.length >= 3 && buf[0]===0xff && buf[1]===0xd8 && buf[2]===0xff) return {id:'jpeg', name:'JPEG', mime:'image/jpeg'};
+  if (buf.length >= 12 && ascii(buf,0,4)==='RIFF' && ascii(buf,8,4)==='WEBP') return {id:'webp', name:'WebP', mime:'image/webp'};
+  return {id:'unknown', name:'Unknown / unsupported', mime:null};
+}
+function ascii(buf, start, len) { return String.fromCharCode(...buf.subarray(start, start+len)); }
+
+/* ---------------- PNG ---------------- */
+async function parsePNG(buf, f) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let pos = 8, index = 0, sawIEND = false;
+  const counts = {}, chunks = [];
+
+  while (pos + 12 <= buf.length) {
+    const len = dv.getUint32(pos, false);
+    const type = ascii(buf, pos+4, 4);
+    const dataStart = pos + 8, crcPos = dataStart + len, end = crcPos + 4;
+    if (end > buf.length) { addWarning(f, `PNG chunk ${type || '(unknown)'} declares ${len} bytes beyond end of file.`); break; }
+
+    const expectedCrc = dv.getUint32(crcPos, false);
+    const actualCrc = crc32(buf.subarray(pos+4, crcPos));
+    const crcOk = expectedCrc === actualCrc;
+    chunks.push({ type, start:dataStart, len, crcOk });
+    counts[type] = (counts[type] || 0) + 1;
+    if (!crcOk) addWarning(f, `PNG CRC mismatch in ${type} chunk #${counts[type]} (expected ${expectedCrc.toString(16).padStart(8,'0')}, calculated ${actualCrc.toString(16).padStart(8,'0')}).`);
+    if (index === 0 && type !== 'IHDR') addWarning(f, `PNG first chunk is ${type}, not IHDR.`);
+
+    const data = buf.subarray(dataStart, dataStart+len);
+    if (type === 'caBX') {
+      f.provenance.containerDetected = true;
+      pushUniquePair(f.c2pa, 'Raw container', `PNG caBX chunk present (${len.toLocaleString()} bytes); AI status is not inferred from presence alone`);
+    } else if (type === 'eXIf') {
+      parseEXIF(data, 0, f, 'PNG eXIf');
+    } else if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
+      await handlePNGText(type, data, f);
+    }
+
+    pos = end; index++;
+    if (type === 'IEND') { sawIEND = true; break; }
+  }
+
+  if (!sawIEND) addWarning(f, 'PNG IEND chunk was not found.');
+  if (sawIEND && pos < buf.length) addWarning(f, `PNG contains ${(buf.length-pos).toLocaleString()} trailing byte(s) after IEND.`);
+  f.struct.push(['PNG chunks', Object.entries(counts).map(([k,v]) => v>1 ? `${k}×${v}` : k).join(', ') || '(none)']);
+  f.struct.push(['PNG CRC status', chunks.length && chunks.every(c=>c.crcOk) ? 'All parsed chunk CRCs valid' : 'One or more CRCs invalid / parsing incomplete']);
+}
+
+async function handlePNGText(type, data, f) {
+  const nul = data.indexOf(0);
+  if (nul < 1) { addWarning(f, `${type} chunk has no valid keyword terminator.`); return; }
+  const key = td(data.subarray(0, nul), 'latin1');
+  let value = '', compressed = false;
+
+  try {
+    if (type === 'tEXt') {
+      value = td(data.subarray(nul+1), 'latin1');
+    } else if (type === 'zTXt') {
+      if (nul+2 > data.length) throw new Error('truncated zTXt header');
+      const method = data[nul+1];
+      if (method !== 0) throw new Error(`unsupported zTXt compression method ${method}`);
+      value = td(await inflateZlib(data.subarray(nul+2)), 'latin1');
+      compressed = true;
+    } else {
+      let p = nul + 1;
+      if (p+2 > data.length) throw new Error('truncated iTXt header');
+      const compFlag = data[p++], compMethod = data[p++];
+      const langEnd = data.indexOf(0, p); if (langEnd < 0) throw new Error('missing iTXt language terminator');
+      p = langEnd + 1;
+      const translatedEnd = data.indexOf(0, p); if (translatedEnd < 0) throw new Error('missing iTXt translated-key terminator');
+      p = translatedEnd + 1;
+      let payload = data.subarray(p);
+      if (compFlag === 1) {
+        if (compMethod !== 0) throw new Error(`unsupported iTXt compression method ${compMethod}`);
+        payload = await inflateZlib(payload); compressed = true;
+      }
+      value = td(payload, 'utf-8');
+    }
+  } catch (e) {
+    value = `[could not decode ${type}: ${e.message}]`;
+    addWarning(f, `${type} metadata '${key}' could not be decompressed/decoded: ${e.message}.`);
+  }
+
+  const label = `${key}${compressed ? ' [decompressed]' : ''}`;
+  pushUniquePair(f.text, label, shortText(value));
+  if (/xmp|xml:com\.adobe\.xmp/i.test(key)) parseXMP(value, f, `PNG ${type}:${key}`);
+  else inspectMetadataText(key, value, f, `PNG ${type}`);
+}
+
+async function inflateZlib(bytes) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('browser lacks DecompressionStream');
+  const ds = new DecompressionStream('deflate');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+let CRC_TABLE = null;
+function crc32(bytes) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n=0; n<256; n++) {
+      let c=n;
+      for (let k=0; k<8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      CRC_TABLE[n] = c >>> 0;
     }
   }
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
-function handlePNGText(type, data, f) {
-  try {
-    const nul = data.indexOf(0);
-    const key = td(data.slice(0, nul));
-    let value;
-    if (type === 'tEXt') value = td(data.slice(nul + 1));
-    else if (type === 'iTXt') {
-      let p = nul + 1;
-      const compFlag = data[p]; p += 2;
-      p = data.indexOf(0, p) + 1;   // lang
-      p = data.indexOf(0, p) + 1;   // translated key
-      value = compFlag ? '[compressed iTXt]' : td(data.slice(p));
-    } else value = '[compressed zTXt]';
-    checkTextForAI(key, value, f);
-    if (value.length > 500) value = value.slice(0, 500) + '…';
-    f.text.push([key, value]);
-  } catch(e) {}
-}
-
-/* ============ JPEG ============ */
+/* ---------------- JPEG ---------------- */
 function parseJPEG(buf, f) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  let pos = 2;
-  const segs = [];
-  while (pos + 4 <= buf.length) {
-    if (buf[pos] !== 0xFF) break;
-    const marker = buf[pos+1];
-    if (marker === 0xD9 || marker === 0xDA) break;
-    const len = dv.getUint16(pos+2);
-    const data = buf.slice(pos+4, pos+4+len-2);
-    segs.push(marker);
-    if (marker === 0xE1) {
-      const head = td(data.slice(0, 32));
-      if (head.startsWith('Exif')) parseEXIF(data, 6, f);
-      else if (head.includes('ns.adobe.com/xap')) {
-        const xmp = td(data);
-        checkTextForAI('XMP', xmp, f);
-        f.text.push(['XMP packet', xmp.length > 500 ? xmp.slice(0,500)+'…' : xmp]);
-      }
+  let pos = 2, entropy = false, eoi = -1;
+  const segs = [], extXmpParts = new Map();
+
+  while (pos < buf.length) {
+    if (entropy) {
+      const markerPos = findNextJpegMarker(buf, pos);
+      if (markerPos < 0) break;
+      pos = markerPos;
+      entropy = false;
     }
-    if (marker === 0xEB) {
-      const s = td(data.slice(0, 48));
-      if (s.includes('jumb') || s.includes('c2pa') || s.includes('JP')) {
-        f.aiIndicators.push({ label: 'C2PA segment (APP11/JUMBF)', value: `Present, ${data.length.toLocaleString()} bytes`, weight: 1 });
-        parseC2PA(data, f);
+    if (pos + 1 >= buf.length) break;
+    if (buf[pos] !== 0xff) { addWarning(f, `Unexpected JPEG byte 0x${buf[pos].toString(16)} at offset ${pos}.`); break; }
+    while (pos < buf.length && buf[pos] === 0xff) pos++;
+    if (pos >= buf.length) break;
+    const marker = buf[pos++];
+    segs.push('FF' + marker.toString(16).toUpperCase().padStart(2,'0'));
+
+    if (marker === 0xd9) { eoi = pos-2; break; }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (pos + 2 > buf.length) { addWarning(f, `Truncated JPEG marker FF${marker.toString(16)} length.`); break; }
+    const len = dv.getUint16(pos, false);
+    if (len < 2) { addWarning(f, `Invalid JPEG segment length ${len} for marker FF${marker.toString(16)}.`); break; }
+    const dataStart = pos + 2, dataEnd = dataStart + len - 2;
+    if (dataEnd > buf.length) { addWarning(f, `JPEG marker FF${marker.toString(16)} extends beyond end of file.`); break; }
+    const data = buf.subarray(dataStart, dataEnd);
+
+    if (marker === 0xe1) parseJPEGAPP1(data, f, extXmpParts);
+    else if (marker === 0xeb) {
+      const s = td(data.subarray(0, Math.min(96, data.length)), 'latin1');
+      if (/jumb|c2pa/i.test(s)) {
+        f.provenance.containerDetected = true;
+        pushUniquePair(f.c2pa, 'Raw container', `JPEG APP11/JUMBF segment present (${data.length.toLocaleString()} bytes); AI status is not inferred from presence alone`);
       }
-    }
-    pos = pos + 4 + len - 2;
+    } else if (marker === 0xed) parseAPP13(data, f);
+
+    pos = dataEnd;
+    if (marker === 0xda) entropy = true; // Start of Scan
   }
-  f.struct.push(['JPEG segments', segs.map(m => 'FF' + m.toString(16).toUpperCase()).join(', ')]);
+
+  reconstructExtendedXMP(extXmpParts, f);
+  f.struct.push(['JPEG markers', segs.join(', ')]);
+  if (eoi < 0) addWarning(f, 'JPEG EOI marker was not found.');
+  else {
+    const trailing = buf.length - (eoi + 2);
+    f.struct.push(['JPEG EOI', `Found at offset ${eoi.toLocaleString()}`]);
+    if (trailing > 0) addWarning(f, `JPEG contains ${trailing.toLocaleString()} trailing byte(s) after EOI.`);
+  }
 }
 
-/* ============ WebP ============ */
+function findNextJpegMarker(buf, start) {
+  for (let i=start; i+1<buf.length; i++) {
+    if (buf[i] !== 0xff) continue;
+    let j=i+1;
+    while (j < buf.length && buf[j] === 0xff) j++;
+    if (j >= buf.length) return -1;
+    const m=buf[j];
+    if (m === 0x00) { i=j; continue; }
+    if (m >= 0xd0 && m <= 0xd7) { i=j; continue; }
+    return i;
+  }
+  return -1;
+}
+
+function parseJPEGAPP1(data, f, extXmpParts) {
+  const exifSig = data.length >= 6 && ascii(data,0,6) === 'Exif\0\0';
+  if (exifSig) { parseEXIF(data, 6, f, 'JPEG APP1 EXIF'); return; }
+
+  const xmpNs = 'http://ns.adobe.com/xap/1.0/\0';
+  const extNs = 'http://ns.adobe.com/xmp/extension/\0';
+  const prefix = td(data.subarray(0, Math.min(80,data.length)), 'latin1');
+  if (prefix.startsWith(xmpNs)) {
+    const xmp = td(data.subarray(xmpNs.length));
+    pushUniquePair(f.text, 'XMP packet', shortText(xmp));
+    parseXMP(xmp, f, 'JPEG APP1 XMP');
+    return;
+  }
+  if (prefix.startsWith(extNs)) {
+    const p = extNs.length;
+    if (data.length < p+40) { addWarning(f, 'Truncated JPEG Extended XMP segment.'); return; }
+    const guid = td(data.subarray(p,p+32),'latin1');
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const total = dv.getUint32(p+32, false), offset = dv.getUint32(p+36, false);
+    const payload = data.subarray(p+40);
+    if (!extXmpParts.has(guid)) extXmpParts.set(guid, {total, parts:[]});
+    extXmpParts.get(guid).parts.push({offset, payload});
+  }
+}
+
+function reconstructExtendedXMP(map, f) {
+  for (const [guid, rec] of map) {
+    if (rec.total > 64*1024*1024) { addWarning(f, `Extended XMP ${guid} declares an unreasonable ${rec.total} bytes; skipped.`); continue; }
+    const out = new Uint8Array(rec.total);
+    const covered = new Uint8Array(rec.total);
+    let valid = true;
+    for (const part of rec.parts) {
+      if (part.offset + part.payload.length > out.length) { valid=false; break; }
+      out.set(part.payload, part.offset); covered.fill(1, part.offset, part.offset+part.payload.length);
+    }
+    if (!valid || covered.some(v=>v===0)) addWarning(f, `Extended XMP ${guid} is incomplete or malformed.`);
+    const xmp = td(out);
+    pushUniquePair(f.text, `Extended XMP ${guid}`, shortText(xmp));
+    parseXMP(xmp, f, `JPEG Extended XMP ${guid}`);
+  }
+}
+
+/* ---------------- WebP ---------------- */
 function parseWEBP(buf, f) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  let pos = 12;
-  const names = [];
+  const declared = dv.getUint32(4, true) + 8;
+  f.struct.push(['WebP RIFF declared size', `${declared.toLocaleString()} bytes`]);
+  if (declared !== buf.length) addWarning(f, `WebP RIFF size mismatch: header declares ${declared.toLocaleString()} bytes, file has ${buf.length.toLocaleString()} bytes.`);
+
+  let pos=12; const names=[];
   while (pos + 8 <= buf.length) {
-    const fourcc = String.fromCharCode(...buf.slice(pos, pos+4));
-    const size = dv.getUint32(pos+4, true);
-    names.push(fourcc.trim());
-    const data = buf.slice(pos+8, pos+8+size);
-    if (fourcc === 'EXIF') parseEXIF(data, 0, f);
-    if (fourcc === 'XMP ') {
-      const xmp = td(data);
-      checkTextForAI('XMP', xmp, f);
-      f.text.push(['XMP packet', xmp.length > 500 ? xmp.slice(0,500)+'…' : xmp]);
+    const fourcc = ascii(buf,pos,4);
+    const size = dv.getUint32(pos+4,true);
+    const dataStart = pos+8, dataEnd=dataStart+size, paddedEnd=dataEnd+(size&1);
+    names.push(fourcc.trim() || JSON.stringify(fourcc));
+    if (dataEnd > buf.length) { addWarning(f, `WebP chunk ${fourcc} extends beyond end of file.`); break; }
+    const data=buf.subarray(dataStart,dataEnd);
+    if (fourcc === 'EXIF') parseEXIF(data, data.length>=6 && ascii(data,0,6)==='Exif\0\0' ? 6 : 0, f, 'WebP EXIF');
+    else if (fourcc === 'XMP ') {
+      const xmp=td(data); pushUniquePair(f.text,'XMP packet',shortText(xmp)); parseXMP(xmp,f,'WebP XMP');
+    } else if (fourcc === 'C2PA' || /c2pa|jumb/i.test(td(data.subarray(0,Math.min(96,data.length)),'latin1'))) {
+      f.provenance.containerDetected = true;
+      pushUniquePair(f.c2pa,'Raw container',`WebP ${fourcc.trim() || 'unnamed'} chunk contains C2PA/JUMBF data (${size.toLocaleString()} bytes); presence alone is not AI evidence`);
     }
-    if (fourcc === 'C2PA' || td(data.slice(0,48)).includes('c2pa')) {
-      f.aiIndicators.push({ label: 'C2PA data in WebP chunk ' + fourcc.trim(), value: `Present, ${size.toLocaleString()} bytes`, weight: 1 });
-      parseC2PA(data, f);
-    }
-    pos += 8 + size + (size & 1);
+    pos=paddedEnd;
   }
-  f.struct.push(['WebP chunks', names.join(', ')]);
+  if (pos < buf.length && buf.length-pos > 1) addWarning(f, `WebP has ${(buf.length-pos).toLocaleString()} unparsed trailing byte(s).`);
+  f.struct.push(['WebP chunks', names.join(', ') || '(none)']);
 }
 
-/* ============ C2PA extraction ============ */
-function parseC2PA(data, f) {
-  const text = td(data);
-
-  if (text.includes('compositeWithTrainedAlgorithmicMedia')) {
-    f.aiIndicators.push({ label: 'digitalSourceType', value: 'compositeWithTrainedAlgorithmicMedia — partially AI-generated / AI-edited', weight: 3 });
-    f.c2pa.push(['digitalSourceType', 'compositeWithTrainedAlgorithmicMedia']);
-  } else if (text.includes('trainedAlgorithmicMedia')) {
-    f.aiIndicators.push({ label: 'digitalSourceType', value: 'trainedAlgorithmicMedia — IPTC code for fully AI-generated content', weight: 3 });
-    f.c2pa.push(['digitalSourceType', 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia']);
-  }
-
-  for (const act of ['c2pa.created','c2pa.converted','c2pa.watermarked.unbound','c2pa.watermarked','c2pa.edited','c2pa.opened','c2pa.placed','c2pa.color_adjustments','c2pa.resized','c2pa.cropped']) {
-    if (text.includes(act)) f.c2pa.push(['Action', act]);
-  }
-  if (text.includes('c2pa.watermarked')) {
-    f.aiIndicators.push({ label: 'Invisible watermark', value: 'c2pa.watermarked action — pixel-level watermark embedded', weight: 1 });
-  }
-
-  const agents = [
-    ['gpt-image', 'OpenAI GPT image model'],
-    ['DALL·E', 'OpenAI DALL·E'], ['DALL-E', 'OpenAI DALL·E'],
-    ['OpenAI', 'OpenAI'],
-    ['Adobe Firefly', 'Adobe Firefly'],
-    ['Midjourney', 'Midjourney'],
-    ['Stable Diffusion', 'Stability AI'],
-    ['Imagen', 'Google Imagen'],
-    ['Gemini', 'Google Gemini'],
-    ['Bing Image Creator', 'Microsoft'],
-    ['Microsoft Designer', 'Microsoft'],
-    ['Grok', 'xAI Grok'],
-    ['Leonardo', 'Leonardo AI'],
-    ['Photoshop', 'Adobe Photoshop (may include generative fill)'],
-  ];
-  for (const [needle, vendor] of agents) {
-    if (text.includes(needle)) {
-      f.aiIndicators.push({ label: 'Generator identified', value: `${needle} (${vendor})`, weight: needle === 'Photoshop' ? 1 : 2 });
-      f.c2pa.push(['Software agent', needle]);
-    }
-  }
-
-  const grab = (re, label) => { const m = text.match(re); if (m) f.c2pa.push([label, m[1] || m[0]]); };
-  grab(/urn:c2pa:[0-9a-f-]{36}/, 'Manifest ID');
-  grab(/xmp:iid:[0-9a-f-]{36}/, 'Instance ID');
-  grab(/specVersion.{0,3}(\d+\.\d+\.\d+)/, 'C2PA spec version');
-  const times = [...new Set(text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g) || [])];
-  times.forEach(t => f.c2pa.push(['Timestamp', t]));
-
-  for (const org of ['OpenAI OpCo','OpenAI, Inc','Adobe Inc','SSL Corporation','SSL.com','Truepic','DigiCert','Microsoft Corporation','Google LLC','Sectigo']) {
-    if (text.includes(org)) f.c2pa.push(['Certificate / signer mentions', org]);
-  }
-  if (text.includes('c2pa.signature')) f.c2pa.push(['Signature', 'Cryptographic signature block present']);
-}
-
-/* ============ EXIF ============ */
+/* ---------------- EXIF/TIFF ---------------- */
 const EXIF_TAGS = {
-  0x010F:'Make', 0x0110:'Model', 0x0131:'Software', 0x0132:'DateTime',
-  0x013B:'Artist', 0x8298:'Copyright', 0x9003:'DateTimeOriginal', 0x9004:'DateTimeDigitized',
-  0x829A:'ExposureTime', 0x829D:'FNumber', 0x8827:'ISO', 0x920A:'FocalLength',
-  0xA430:'CameraOwnerName', 0xA431:'BodySerialNumber', 0xA434:'LensModel',
-  0x9286:'UserComment', 0x010E:'ImageDescription',
-  0x0001:'GPSLatRef', 0x0002:'GPSLatitude', 0x0003:'GPSLonRef', 0x0004:'GPSLongitude'
+  0x010E:'ImageDescription',0x010F:'Make',0x0110:'Model',0x0112:'Orientation',0x0131:'Software',0x0132:'DateTime',0x013B:'Artist',0x8298:'Copyright',
+  0x829A:'ExposureTime',0x829D:'FNumber',0x8769:'ExifIFDPointer',0x8825:'GPSIFDPointer',0x8827:'ISO',0x9003:'DateTimeOriginal',0x9004:'DateTimeDigitized',
+  0x920A:'FocalLength',0x9286:'UserComment',0xA005:'InteropIFDPointer',0xA430:'CameraOwnerName',0xA431:'BodySerialNumber',0xA434:'LensModel',
+  0x0001:'GPSLatitudeRef',0x0002:'GPSLatitude',0x0003:'GPSLongitudeRef',0x0004:'GPSLongitude',0x0005:'GPSAltitudeRef',0x0006:'GPSAltitude',0x001D:'GPSDateStamp'
 };
+const TIFF_TYPE_SIZES = {1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8};
 
-function parseEXIF(data, offset, f) {
+function parseEXIF(data, offset, f, source='EXIF') {
   try {
-    const dv = new DataView(data.buffer, data.byteOffset + offset, data.byteLength - offset);
-    const little = dv.getUint16(0) === 0x4949;
-    if (!little && dv.getUint16(0) !== 0x4D4D) return;
-    const g16 = o => dv.getUint16(o, little);
-    const g32 = o => dv.getUint32(o, little);
-    if (g16(2) !== 0x2A) return;
+    if (data.byteLength-offset < 8) throw new Error('TIFF header truncated');
+    const dv = new DataView(data.buffer, data.byteOffset+offset, data.byteLength-offset);
+    const bo=dv.getUint16(0,false), little=bo===0x4949;
+    if (!little && bo!==0x4d4d) throw new Error('invalid TIFF byte order');
+    const g16=o=>dv.getUint16(o,little), g32=o=>dv.getUint32(o,little);
+    if (g16(2)!==0x2a) throw new Error('invalid TIFF magic');
+    const visited=new Set();
 
-    const readIFD = (ifdOfs, depth) => {
-      if (depth > 4 || ifdOfs + 2 > dv.byteLength) return;
-      const n = g16(ifdOfs);
-      for (let i = 0; i < n; i++) {
-        const e = ifdOfs + 2 + i * 12;
-        if (e + 12 > dv.byteLength) return;
-        const tag = g16(e), type = g16(e+2), count = g32(e+4);
-        if (tag === 0x8769 || tag === 0x8825) { readIFD(g32(e+8), depth+1); continue; }
-        const name = EXIF_TAGS[tag];
-        if (!name) continue;
-        let val = '';
-        if (type === 2) {
-          const valOfs = count <= 4 ? e+8 : g32(e+8);
-          val = td(data.slice(offset+valOfs, offset+valOfs+count)).replace(/\0+$/,'');
-        } else if (type === 3 && count === 1) val = String(g16(e+8));
-        else if (type === 4 && count === 1) val = String(g32(e+8));
-        else if (type === 5 && count >= 1) {
-          const o = g32(e+8);
-          const parts = [];
-          for (let j = 0; j < Math.min(count,3); j++) parts.push(g32(o+j*8) + '/' + g32(o+j*8+4));
-          val = parts.join(', ');
+    const readIFD=(ifdOfs, depth, group='IFD')=>{
+      if (depth>8 || visited.has(ifdOfs)) return;
+      visited.add(ifdOfs);
+      if (ifdOfs<0 || ifdOfs+2>dv.byteLength) { addWarning(f, `${source}: ${group} offset ${ifdOfs} outside EXIF block.`); return; }
+      const n=g16(ifdOfs);
+      if (ifdOfs+2+n*12+4>dv.byteLength) { addWarning(f, `${source}: ${group} declares ${n} entries beyond EXIF block.`); return; }
+      for (let i=0;i<n;i++) {
+        const e=ifdOfs+2+i*12, tag=g16(e), type=g16(e+2), count=g32(e+4);
+        const name=EXIF_TAGS[tag] || `Tag 0x${tag.toString(16).toUpperCase().padStart(4,'0')}`;
+        if (tag===0x8769 || tag===0x8825 || tag===0xA005) {
+          const child=g32(e+8); readIFD(child,depth+1,tag===0x8825?'GPS IFD':tag===0x8769?'Exif IFD':'Interop IFD'); continue;
         }
-        else val = `[type ${type} × ${count}]`;
-        f.exif.push([name, val]);
-        checkTextForAI(name, val, f);
+        const value=readTiffValue(dv,e,type,count,little,tag);
+        if (value !== null) {
+          pushUniquePair(f.exif, `${group} · ${name}`, shortText(value));
+          inspectMetadataText(name, value, f, source);
+        }
+      }
+      const nextPos=ifdOfs+2+n*12;
+      if (group==='IFD0' && nextPos+4<=dv.byteLength) {
+        const next=g32(nextPos); if (next) readIFD(next,depth+1,'IFD1');
       }
     };
-    readIFD(g32(4), 0);
-    if (f.exif.some(([k]) => k.startsWith('GPSLat'))) {
-      f.exif.push(['⚠ GPS data', 'Location coordinates are embedded in this file']);
+    readIFD(g32(4),0,'IFD0');
+
+    const gps = extractGpsFromRows(f.exif);
+    if (gps) pushUniquePair(f.exif, '⚠ GPS decimal coordinates', `${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}`);
+  } catch(e) { addWarning(f, `${source} parse failed: ${e.message}.`); }
+}
+
+function readTiffValue(dv,e,type,count,little,tag) {
+  const size=TIFF_TYPE_SIZES[type];
+  if (!size || count>10_000_000) return `[type ${type} × ${count}]`;
+  const bytes=size*count;
+  let p;
+  if (bytes<=4) p=e+8;
+  else {
+    p=dv.getUint32(e+8,little);
+    if (p<0 || p+bytes>dv.byteLength) return `[invalid offset ${p}, ${bytes} bytes]`;
+  }
+  const maxItems=Math.min(count,64);
+  const values=[];
+  const ration=(n,d)=>d===0?`${n}/0`:Number(n/d).toPrecision(8).replace(/\.?0+$/,'');
+  try {
+    if (type===2) {
+      const raw=new Uint8Array(dv.buffer,dv.byteOffset+p,Math.min(bytes,dv.byteLength-p));
+      return td(raw.subarray(0,Math.max(0,raw.indexOf(0)>=0?raw.indexOf(0):raw.length)),'latin1');
     }
-  } catch(e) {}
+    if (type===7) {
+      const raw=new Uint8Array(dv.buffer,dv.byteOffset+p,bytes);
+      if (tag===0x9286) return decodeExifUserComment(raw);
+      const printable=[...raw].filter(b=>b===9||b===10||b===13||(b>=32&&b<127)).length/raw.length;
+      return printable>.8 ? td(raw,'latin1').replace(/\0+$/,'') : `0x${hex(raw.subarray(0,Math.min(raw.length,64)))}${raw.length>64?'…':''}`;
+    }
+    for(let i=0;i<maxItems;i++) {
+      const o=p+i*size;
+      if(type===1) values.push(dv.getUint8(o));
+      else if(type===3) values.push(dv.getUint16(o,little));
+      else if(type===4) values.push(dv.getUint32(o,little));
+      else if(type===5) values.push(ration(dv.getUint32(o,little),dv.getUint32(o+4,little)));
+      else if(type===6) values.push(dv.getInt8(o));
+      else if(type===8) values.push(dv.getInt16(o,little));
+      else if(type===9) values.push(dv.getInt32(o,little));
+      else if(type===10) values.push(ration(dv.getInt32(o,little),dv.getInt32(o+4,little)));
+      else if(type===11) values.push(dv.getFloat32(o,little));
+      else if(type===12) values.push(dv.getFloat64(o,little));
+    }
+    return values.join(', ') + (count>maxItems?` … [${count} values]`:'');
+  } catch { return `[unreadable type ${type} × ${count}]`; }
+}
+function decodeExifUserComment(raw) {
+  if (raw.length>=8) {
+    const prefix=td(raw.subarray(0,8),'latin1');
+    if (prefix.startsWith('ASCII')) return td(raw.subarray(8),'latin1').replace(/\0+$/,'');
+    if (prefix.startsWith('UNICODE')) {
+      const body=raw.subarray(8);
+      try { return td(body, body[0]===0xfe&&body[1]===0xff?'utf-16be':'utf-16le').replace(/\0+$/,''); } catch {}
+    }
+  }
+  return td(raw,'utf-8').replace(/\0+$/,'');
+}
+function extractGpsFromRows(rows) {
+  const get=(suffix)=>rows.find(([k])=>k.endsWith(suffix))?.[1];
+  const lat=get('GPSLatitude'), latRef=get('GPSLatitudeRef'), lon=get('GPSLongitude'), lonRef=get('GPSLongitudeRef');
+  if(!lat||!lon) return null;
+  const nums=s=>String(s).split(',').map(x=>Number(x.trim())).filter(Number.isFinite);
+  const a=nums(lat), b=nums(lon); if(a.length<3||b.length<3)return null;
+  let la=a[0]+a[1]/60+a[2]/3600, lo=b[0]+b[1]/60+b[2]/3600;
+  if(/^S/i.test(latRef||''))la=-la; if(/^W/i.test(lonRef||''))lo=-lo;
+  return {lat:la,lon:lo};
 }
 
-/* ============ Text-based AI signatures ============ */
-function checkTextForAI(key, value, f) {
-  const combined = key + ' ' + value;
-  const sigs = [
-    [/stable diffusion/i, 'Stable Diffusion'],
-    [/\bComfyUI\b/i, 'ComfyUI (SD workflow tool)'],
-    [/AUTOMATIC1111|sd-webui/i, 'Stable Diffusion WebUI'],
-    [/Negative prompt:/i, 'SD generation parameters'],
-    [/Steps: \d+, Sampler:/i, 'SD generation parameters'],
-    [/midjourney/i, 'Midjourney'],
-    [/DALL[·-]?E/i, 'DALL·E'],
-    [/\bNovelAI\b/i, 'NovelAI'],
-    [/InvokeAI/i, 'InvokeAI'],
-    [/Adobe Firefly/i, 'Adobe Firefly'],
-    [/\bSDXL\b|\bFlux\.1\b|\bFLUX\b/, 'Diffusion model name'],
-    [/trainedAlgorithmicMedia/i, 'IPTC trainedAlgorithmicMedia'],
-    [/GenAI|generative.?ai/i, 'Generic GenAI tag'],
+/* ---------------- XMP / IPTC ---------------- */
+function parseXMP(xmp, f, source) {
+  if (!xmp) return;
+  inspectMetadataText('XMP', xmp, f, source);
+  const prov = firstMatch(xmp, /(?:dcterms:provenance|provenance)\s*=\s*["']([^"']+)["']/i) || firstMatch(xmp, /<dcterms:provenance[^>]*>([^<]+)</i);
+  if (prov) {
+    f.provenance.referenceDetected = true;
+    pushUniquePair(f.c2pa, 'XMP provenance reference', prov);
+  }
+  const creator = firstMatch(xmp, /(?:xmp:CreatorTool|CreatorTool)\s*=\s*["']([^"']+)["']/i) || firstMatch(xmp, /<xmp:CreatorTool[^>]*>([^<]+)</i);
+  if (creator) { pushUniquePair(f.text, 'XMP CreatorTool', creator); inspectMetadataText('CreatorTool',creator,f,source); }
+  for (const uri of [DST.AI_GENERATED,DST.AI_EDITED,DST.DIGITAL_CAPTURE,DST.DIGITAL_CREATION,DST.HUMAN_EDITS,DST.ALGO_ENHANCED,DST.SCREEN_CAPTURE]) {
+    if (xmp.includes(uri)) pushUniquePair(f.text, 'XMP DigitalSourceType', uri);
+  }
+}
+function firstMatch(s,re){ const m=String(s).match(re); return m?.[1] || null; }
+
+function parseAPP13(data, f) {
+  const sig='Photoshop 3.0\0';
+  if (td(data.subarray(0,sig.length),'latin1')!==sig) return;
+  let p=sig.length;
+  while(p+12<=data.length){
+    if(ascii(data,p,4)!=='8BIM')break; p+=4;
+    const id=(data[p]<<8)|data[p+1]; p+=2;
+    const nameLen=data[p]; p+=1+nameLen; if((1+nameLen)&1)p++;
+    if(p+4>data.length)break;
+    const size=(data[p]*0x1000000)+(data[p+1]<<16)+(data[p+2]<<8)+data[p+3]; p+=4;
+    if(p+size>data.length){addWarning(f,'Photoshop APP13 resource extends beyond segment.');break;}
+    const payload=data.subarray(p,p+size);
+    if(id===0x0404) parseIPTCIIM(payload,f);
+    p+=size+(size&1);
+  }
+}
+const IPTC_DATASETS = {
+  '1:90':'CodedCharacterSet','2:5':'ObjectName','2:25':'Keywords','2:40':'SpecialInstructions','2:55':'DateCreated','2:60':'TimeCreated',
+  '2:80':'Byline','2:85':'BylineTitle','2:90':'City','2:95':'ProvinceState','2:101':'CountryCode','2:105':'Headline','2:110':'Credit','2:115':'Source',
+  '2:116':'CopyrightNotice','2:120':'CaptionAbstract','2:122':'WriterEditor'
+};
+function parseIPTCIIM(bytes,f){
+  let p=0, utf8=false;
+  while(p+5<=bytes.length){
+    if(bytes[p]!==0x1c){p++;continue;}
+    const record=bytes[p+1], dataset=bytes[p+2]; p+=3;
+    let len=(bytes[p]<<8)|bytes[p+1]; p+=2;
+    if(len&0x8000){
+      const n=len&0x7fff; if(n<1||n>4||p+n>bytes.length){addWarning(f,'Unsupported/invalid extended IPTC length.');return;}
+      len=0; for(let i=0;i<n;i++)len=(len<<8)|bytes[p++];
+    }
+    if(p+len>bytes.length){addWarning(f,'Truncated IPTC IIM dataset.');return;}
+    const valBytes=bytes.subarray(p,p+len); p+=len;
+    const key=`${record}:${dataset}`;
+    if(key==='1:90' && hex(valBytes).toLowerCase()==='1b2547') utf8=true;
+    const value=td(valBytes,utf8?'utf-8':'latin1').replace(/\0+$/,'');
+    const name=IPTC_DATASETS[key] || `Dataset ${key}`;
+    pushUniquePair(f.iptc,name,shortText(value));
+    inspectMetadataText(name,value,f,'JPEG APP13 IPTC');
+  }
+}
+
+/* ---------------- Metadata AI signatures ---------------- */
+function inspectMetadataText(key, value, f, source) {
+  const k=String(key||''), v=String(value||''), combined=`${k} ${v}`;
+  if(!v && !k)return;
+
+  if(combined.includes(DST.AI_GENERATED) || /\btrainedAlgorithmicMedia\b/i.test(combined)) {
+    addEvidence(f,{type:'UNSIGNED_DIGITAL_SOURCE_TYPE',strength:'medium',authenticated:false,classification:'ai_generated',label:'AI generation declared in mutable metadata',value:'trainedAlgorithmicMedia',source});
+  }
+  if(combined.includes(DST.AI_EDITED) || /\bcompositeWithTrainedAlgorithmicMedia\b/i.test(combined)) {
+    addEvidence(f,{type:'UNSIGNED_DIGITAL_SOURCE_TYPE',strength:'medium',authenticated:false,classification:'ai_edited',label:'Generative-AI editing declared in mutable metadata',value:'compositeWithTrainedAlgorithmicMedia',source});
+  }
+
+  const sigs=[
+    [/\bstable diffusion\b/i,'Stable Diffusion'],[/\bComfyUI\b/i,'ComfyUI'],[/AUTOMATIC1111|sd-webui/i,'AUTOMATIC1111 / SD WebUI'],
+    [/\bMidjourney\b/i,'Midjourney'],[/DALL[·-]?E/i,'DALL·E'],[/\bNovelAI\b/i,'NovelAI'],[/\bInvokeAI\b/i,'InvokeAI'],
+    [/Adobe Firefly/i,'Adobe Firefly'],[/\bFooocus\b/i,'Fooocus'],[/\bSwarmUI\b/i,'SwarmUI'],[/Stability Matrix/i,'Stability Matrix'],
+    [/\bDiffusers\b/i,'Hugging Face Diffusers'],[/\bDraw Things\b/i,'Draw Things'],[/Krita AI Diffusion/i,'Krita AI Diffusion'],
+    [/\bSDXL\b/i,'SDXL'],[/\bFLUX(?:\.|\b)/i,'FLUX'],[/\bgpt-image(?:-\d+)?\b/i,'OpenAI GPT Image'],[/\bImagen\b/i,'Google Imagen']
   ];
-  for (const [re, name] of sigs) {
-    if (re.test(combined)) f.aiIndicators.push({ label: `AI signature in ${key}`, value: name, weight: 2 });
+  for(const [re,name] of sigs){
+    if(re.test(combined)) addEvidence(f,{type:'SOFTWARE_FINGERPRINT',strength:'supporting',authenticated:false,classification:'ai_possible',label:'AI software/model fingerprint',value:name,source});
+  }
+
+  const a1111=/Steps:\s*\d+\s*,\s*Sampler:/i.test(v) && /(CFG scale|Seed|Size):/i.test(v);
+  if(a1111) addEvidence(f,{type:'GENERATION_SCHEMA',strength:'medium',authenticated:false,classification:'ai_possible',label:'Stable Diffusion generation parameter schema',value:'Steps / Sampler / CFG or Seed fields detected',source});
+
+  const comfyKey=/^(workflow|prompt)$/i.test(k.trim());
+  const comfyJson=comfyKey && /"(?:class_type|inputs)"\s*:/i.test(v) && /(KSampler|CheckpointLoader|CLIPTextEncode|SaveImage)/i.test(v);
+  if(comfyJson) addEvidence(f,{type:'GENERATION_SCHEMA',strength:'medium',authenticated:false,classification:'ai_possible',label:'ComfyUI workflow/prompt schema',value:`Structured ${k} JSON contains ComfyUI node signatures`,source});
+}
+
+/* ---------------- Raw whole-file fallback ---------------- */
+function scanStrings(buf,f){
+  const head=td(buf.subarray(0,Math.min(buf.length,1024*1024)),'latin1');
+  const tail=td(buf.subarray(Math.max(0,buf.length-128*1024)),'latin1');
+  const blob=head+'\n'+tail;
+  if(!f.provenance.containerDetected && /c2pa\.assertions|urn:c2pa:|jumbf.*c2pa/i.test(blob)){
+    f.provenance.containerDetected=true;
+    pushUniquePair(f.c2pa,'Raw C2PA strings','C2PA/JUMBF-related strings found outside a container recognized by the format parser; requires SDK validation');
+  }
+  if(/dcterms:provenance|xmpMM:ManifestURL|c2pa\.manifest/i.test(blob)) f.provenance.referenceDetected=true;
+}
+
+/* ---------------- Official C2PA validation ---------------- */
+async function getC2paSdk(){
+  if(!c2paSdkPromise){
+    c2paSdkPromise=(async()=>{
+      const mod=await import(C2PA_MODULE_URL);
+      if(typeof mod.createC2pa!=='function') throw new Error('createC2pa export not found');
+      return await mod.createC2pa({wasmSrc:C2PA_WASM_URL});
+    })();
+  }
+  return c2paSdkPromise;
+}
+
+async function validateC2PA(file,f){
+  f.provenance.sdkAttempted=true;
+  let reader=null;
+  try{
+    const sdk=await getC2paSdk(); f.provenance.sdkLoaded=true;
+    reader=await sdk.reader.fromBlob(file.type || guessMimeFromName(file.name), file);
+    const store=await reader.manifestStore();
+    f.provenance.rawStore=store;
+    f.provenance.validationState=store?.validation_state || 'Unknown';
+    f.provenance.activeManifest=store?.active_manifest || null;
+    pushUniquePair(f.c2pa,'Validation state',f.provenance.validationState);
+    if(f.provenance.activeManifest) pushUniquePair(f.c2pa,'Active manifest',f.provenance.activeManifest);
+
+    flattenValidation(store,f);
+    analyzeManifestStore(store,f);
+  }catch(e){
+    const msg=String(e?.message || e);
+    if(f.provenance.containerDetected || f.provenance.referenceDetected) addWarning(f,`C2PA was indicated, but the official validator could not produce a manifest store: ${msg}`);
+    pushUniquePair(f.c2pa,'C2PA SDK',`Validation unavailable: ${msg}`);
+  }finally{
+    try{ if(reader) await reader.free(); }catch{}
+  }
+}
+function guessMimeFromName(name=''){
+  if(/\.png$/i.test(name))return'image/png'; if(/\.webp$/i.test(name))return'image/webp'; return'image/jpeg';
+}
+
+function flattenValidation(store,f){
+  const state=store?.validation_state;
+  if(state) pushUniquePair(f.validation,'Overall state',state);
+  const ar=store?.validation_results?.activeManifest;
+  for(const cat of ['success','informational','failure']){
+    for(const item of ar?.[cat] || []) pushUniquePair(f.validation,cat.toUpperCase(),`${item.code}${item.explanation?' — '+item.explanation:''}`);
+  }
+  for(const item of store?.validation_status || []) pushUniquePair(f.validation,item.success===false?'FAILURE':'STATUS',`${item.code}${item.explanation?' — '+item.explanation:''}`);
+  const deltas=store?.validation_results?.ingredientDeltas || [];
+  for(const d of deltas){
+    for(const cat of ['success','informational','failure']) for(const item of d?.validationDeltas?.[cat] || [])
+      pushUniquePair(f.validation,`INGREDIENT ${cat.toUpperCase()}`,`${item.code}${item.explanation?' — '+item.explanation:''}`);
   }
 }
 
-/* ============ Fallback whole-file scan ============ */
-function scanStrings(buf, f) {
-  const head = td(buf.slice(0, 524288));
-  const tail = td(buf.slice(Math.max(0, buf.length - 65536)));
-  const blob = head + tail;
-  if (!f.aiIndicators.some(i => i.label.includes('C2PA')) && /c2pa\.assertions|urn:c2pa:/.test(blob)) {
-    f.aiIndicators.push({ label: 'C2PA strings (unstructured)', value: 'Manifest data present outside expected container', weight: 1 });
-    parseC2PA(buf, f);
+function analyzeManifestStore(store,f){
+  if(!store || !store.manifests || !store.active_manifest) return;
+  const active=store.manifests[store.active_manifest];
+  if(!active){ addWarning(f,'C2PA active_manifest label does not resolve to a manifest object.'); return; }
+  const state=store.validation_state || 'Unknown';
+  const authenticated=state==='Trusted' || state==='Valid';
+  const strength=state==='Trusted'?'strong':state==='Valid'?'strong':'invalid';
+
+  pushManifestSummary(active,f,'Active manifest');
+  const activeActions=getManifestActions(active);
+  for(const action of activeActions){
+    if(action.action) pushUniquePair(f.c2pa,'Active action',action.action);
+    if(action.digitalSourceType){
+      f.provenance.activeSourceTypes.push(action.digitalSourceType);
+      pushUniquePair(f.c2pa,'Active digitalSourceType',action.digitalSourceType);
+      const cls=classifyDst(action.digitalSourceType);
+      if(cls==='ai_generated'||cls==='ai_edited') addEvidence(f,{
+        type:'C2PA_DIGITAL_SOURCE_TYPE',strength,authenticated,classification:cls,
+        label:cls==='ai_generated'?'C2PA declares AI-generated origin':'C2PA declares Generative-AI editing',
+        value:action.digitalSourceType,source:`Active manifest · ${state}`
+      });
+    }
+    const agent=typeof action.softwareAgent==='string'?action.softwareAgent:action.softwareAgent?.name;
+    if(agent){ pushUniquePair(f.c2pa,'Action software agent',agent); inspectMetadataText('C2PA softwareAgent',agent,f,'Validated C2PA active manifest'); }
+    if(action.action && /c2pa\.watermarked(?:\.|$)/.test(action.action)) pushUniquePair(f.c2pa,'Soft binding / watermark action',action.action);
   }
+
+  const ingredients=active.ingredients || [];
+  pushUniquePair(f.c2pa,'Ingredient count',String(ingredients.length));
+  ingredients.forEach((ing,i)=>{
+    const prefix=`Ingredient ${i+1}`;
+    pushUniquePair(f.c2pa,`${prefix} title`,ing.title || '(untitled)');
+    pushUniquePair(f.c2pa,`${prefix} relationship`,ing.relationship || 'componentOf');
+    if(ing.active_manifest){
+      pushUniquePair(f.c2pa,`${prefix} active manifest`,ing.active_manifest);
+      const m=store.manifests[ing.active_manifest];
+      if(m){
+        const actions=getManifestActions(m);
+        for(const a of actions){
+          if(!a.digitalSourceType)continue;
+          f.provenance.ingredientSourceTypes.push({index:i,relationship:ing.relationship||'componentOf',sourceType:a.digitalSourceType});
+          pushUniquePair(f.c2pa,`${prefix} digitalSourceType`,a.digitalSourceType);
+          const cls=classifyDst(a.digitalSourceType);
+          if((cls==='ai_generated'||cls==='ai_edited') && authenticated){
+            addEvidence(f,{type:'C2PA_AI_INGREDIENT',strength:'strong',authenticated:true,classification:'ai_derived',label:'Validated provenance chain contains AI-origin ingredient',value:`${ing.relationship||'componentOf'} · ${a.digitalSourceType}`,source:`${prefix} · overall ${state}`});
+          }
+        }
+      }
+    }
+  });
+
+  if(state==='Invalid') addEvidence(f,{type:'C2PA_INVALID',strength:'invalid',authenticated:false,classification:'provenance_invalid',label:'C2PA validation failed',value:'Errors were found in the manifest store; AI declarations inside it are not treated as authenticated.',source:'Official C2PA validator'});
 }
 
-/* ============ Render ============ */
-function render(f, file) {
-  document.getElementById('report').style.display = 'block';
+function pushManifestSummary(m,f,prefix){
+  if(m.title)pushUniquePair(f.c2pa,`${prefix} title`,m.title);
+  if(m.format)pushUniquePair(f.c2pa,`${prefix} format`,m.format);
+  if(m.claim_generator)pushUniquePair(f.c2pa,`${prefix} claim generator`,m.claim_generator);
+  for(const info of m.claim_generator_info || []) pushUniquePair(f.c2pa,`${prefix} generator info`,[info.name,info.version].filter(Boolean).join(' ') || safeJson(info));
+  const sig=m.signature_info;
+  if(sig){
+    if(sig.alg)pushUniquePair(f.c2pa,'Signature algorithm',sig.alg);
+    if(sig.issuer)pushUniquePair(f.c2pa,'Signature issuer',sig.issuer);
+    if(sig.common_name)pushUniquePair(f.c2pa,'Signature common name',sig.common_name);
+    if(sig.time)pushUniquePair(f.c2pa,'Signature time',sig.time);
+  }
+}
+function getManifestActions(m){
+  const out=[];
+  for(const a of m?.assertions || []) if(/^c2pa\.actions(?:\.v\d+)?$/.test(a.label || '') && Array.isArray(a.data?.actions)) out.push(...a.data.actions);
+  return out;
+}
+function classifyDst(uri){
+  if(uri===DST.AI_GENERATED || /\/trainedAlgorithmicMedia$/.test(uri))return'ai_generated';
+  if(uri===DST.AI_EDITED || /\/compositeWithTrainedAlgorithmicMedia$/.test(uri))return'ai_edited';
+  return'other';
+}
+
+/* ---------------- Verdict hierarchy ---------------- */
+function evaluateVerdict(f){
+  const state=f.provenance.validationState;
+  const activeAI=f.evidence.filter(e=>e.type==='C2PA_DIGITAL_SOURCE_TYPE' && e.authenticated);
+  const activeGenerated=activeAI.find(e=>e.classification==='ai_generated');
+  const activeEdited=activeAI.find(e=>e.classification==='ai_edited');
+  const ingredientAI=f.evidence.find(e=>e.type==='C2PA_AI_INGREDIENT' && e.authenticated);
+  const unsignedGenerated=f.evidence.find(e=>e.type==='UNSIGNED_DIGITAL_SOURCE_TYPE' && e.classification==='ai_generated');
+  const unsignedEdited=f.evidence.find(e=>e.type==='UNSIGNED_DIGITAL_SOURCE_TYPE' && e.classification==='ai_edited');
+  const schema=f.evidence.find(e=>e.type==='GENERATION_SCHEMA');
+  const software=f.evidence.find(e=>e.type==='SOFTWARE_FINGERPRINT');
+
+  if(state==='Invalid') return {code:'PROVENANCE_INVALID',stamp:'INVALID PROVENANCE',className:'bad',confidence:'C2PA validation: INVALID',text:'Content Credentials are present but failed validation. Treat declarations inside the invalid manifest as unauthenticated; review validation failures below.'};
+  if(activeGenerated) return {code:'AI_GENERATED',stamp:'AI-GENERATED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares that the active asset was created using Generative AI.':'Cryptographically valid C2PA provenance declares that the active asset was created using Generative AI; the active signer is not trusted by the configured trust store.'};
+  if(activeEdited) return {code:'AI_EDITED',stamp:'AI-EDITED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares Generative-AI editing of the active asset.':'Cryptographically valid C2PA provenance declares Generative-AI editing; the active signer is not trusted by the configured trust store.'};
+  if(ingredientAI) return {code:'AI_DERIVED',stamp:'AI-DERIVED',className:'warn',confidence:'HIGH — VALIDATED PROVENANCE CHAIN',text:'The active manifest does not itself declare AI generation, but its validated provenance chain contains an ingredient with an AI origin/edit declaration.'};
+  if(unsignedGenerated || unsignedEdited) return {code:'AI_METADATA',stamp:'AI METADATA',className:'warn',confidence:'MEDIUM — MUTABLE / UNSIGNED METADATA',text:`Mutable metadata declares ${unsignedGenerated?'AI-generated origin':'Generative-AI editing'}, but this declaration is not authenticated by a valid C2PA manifest.`};
+  if(schema) return {code:'POSSIBLE_AI',stamp:'POSSIBLE AI',className:'warn',confidence:'MEDIUM — GENERATION WORKFLOW METADATA',text:'Generation-workflow metadata strongly resembles an AI image tool, but no authenticated AI provenance was found.'};
+  if(software) return {code:'POSSIBLE_AI',stamp:'POSSIBLE AI',className:'warn',confidence:'LOW–MEDIUM — SOFTWARE/MODEL FINGERPRINT',text:'AI-related software or model names were found in mutable metadata. This is supporting evidence, not proof of how the current pixels were created.'};
+  return {code:'NO_AI_METADATA',stamp:'NO AI METADATA',className:'clean',confidence:'INDETERMINATE',text:'No metadata/provenance evidence of AI generation was found. This does not establish that the image is authentic or human-made.'};
+}
+
+/* ---------------- Rendering/report ---------------- */
+function render(f,file,verdict){
+  document.getElementById('report').style.display='block';
   document.getElementById('verdict-wrap').classList.add('show');
   document.getElementById('toolbar').classList.add('show');
+  const stamp=document.getElementById('stamp');
+  stamp.className='stamp '+verdict.className; stamp.textContent=verdict.stamp;
+  document.getElementById('verdict-sub').innerHTML='<b>'+esc(file.name||'pasted image')+'</b> — '+esc(verdict.text);
+  document.getElementById('confidence').textContent=verdict.confidence;
 
-  const seen = new Set();
-  const ai = f.aiIndicators.filter(i => {
-    const k = i.label + '|' + i.value;
-    if (seen.has(k)) return false;
-    seen.add(k); return true;
-  });
-  const score = ai.reduce((s,i) => s + i.weight, 0);
+  const evHtml=f.evidence.length?f.evidence.map(e=>`<div class="evidence"><div><span class="badge ${esc(e.strength)}">${esc(e.strength)}</span></div><div><div class="ev-title">${esc(e.label)}</div><div class="ev-value wordbreak">${esc(e.value)}</div><div class="ev-source">${e.authenticated?'authenticated · ':''}${esc(e.source)}</div></div></div>`).join(''):'<div class="empty">None found</div>';
+  document.getElementById('ai-body').innerHTML=evHtml;
+  document.getElementById('c-ai').textContent=f.evidence.length?`${f.evidence.length} finding${f.evidence.length===1?'':'s'}`:'';
 
-  const stamp = document.getElementById('stamp');
-  const sub = document.getElementById('verdict-sub');
-  let verdictText;
-  if (score >= 3) {
-    stamp.className = 'stamp ai'; stamp.textContent = 'AI-Generated';
-    verdictText = 'Signed provenance metadata explicitly identifies this image as AI output. Confidence: high.';
-  } else if (score > 0) {
-    stamp.className = 'stamp warn'; stamp.textContent = 'Possible AI';
-    verdictText = 'Some AI-related metadata found, but no definitive signed manifest. Review indicators below.';
-  } else {
-    stamp.className = 'stamp clean'; stamp.textContent = 'No AI Metadata';
-    verdictText = 'No AI provenance data found. This does NOT prove authenticity — metadata is easily stripped.';
+  putRows('c2pa-body','c-c2pa',f.c2pa);
+  putRows('validation-body','c-validation',f.validation);
+  putRows('exif-body','c-exif',f.exif);
+  putRows('iptc-body','c-iptc',f.iptc);
+  putRows('text-body','c-text',f.text);
+  putRows('struct-body','c-struct',f.struct);
+
+  const warn=document.getElementById('warn-body');
+  warn.innerHTML=f.warnings.length?f.warnings.map(w=>`<div class="warning">${esc(w)}</div>`).join(''):'<div class="empty">None</div>';
+  document.getElementById('c-warn').textContent=f.warnings.length?`${f.warnings.length} warning${f.warnings.length===1?'':'s'}`:'';
+
+  const raw=document.getElementById('raw-body');
+  if(f.provenance.rawStore){
+    raw.innerHTML=`<details><summary>Show JSON returned by the official C2PA Reader</summary><pre>${esc(JSON.stringify(f.provenance.rawStore,null,2))}</pre></details>`;
+    document.getElementById('c-raw').textContent='available';
+  }else{
+    raw.innerHTML='<div class="empty">No validated manifest store available</div>'; document.getElementById('c-raw').textContent='';
   }
-  sub.innerHTML = '<b>' + esc(file.name || 'pasted image') + '</b> — ' + esc(verdictText);
 
-  const put = (id, cid, rows) => {
-    document.getElementById(id).innerHTML = table(rows);
-    document.getElementById(cid).textContent = rows.length ? rows.length + ' entries' : '';
-  };
-  const aiRows = ai.map(i => row(i.label, i.value, i.weight >= 2));
-  put('ai-body', 'c-ai', aiRows);
-  put('c2pa-body', 'c-c2pa', dedupe(f.c2pa).map(([k,v]) => row(k,v)));
-  put('exif-body', 'c-exif', dedupe(f.exif).map(([k,v]) => row(k,v)));
-  put('text-body', 'c-text', dedupe(f.text).map(([k,v]) => row(k,v)));
-  put('struct-body', 'c-struct', f.struct.map(([k,v]) => row(k,v)));
-
-  // Plain-text report for copy/download
-  const lines = [];
-  lines.push('PROVENANCE REPORT — ' + new Date().toISOString());
-  lines.push('Verdict: ' + stamp.textContent.toUpperCase());
-  lines.push('');
-  const sec = (title, arr) => {
-    lines.push('== ' + title + ' ==');
-    if (!arr.length) lines.push('(none)');
-    arr.forEach(([k,v]) => lines.push(k + ': ' + v));
-    lines.push('');
-  };
-  sec('AI / PROVENANCE INDICATORS', ai.map(i => [i.label, i.value]));
-  sec('C2PA MANIFEST', dedupe(f.c2pa));
-  sec('EXIF', dedupe(f.exif));
-  sec('TEXT / XMP', dedupe(f.text));
-  sec('FILE STRUCTURE', f.struct);
-  lastReport = lines.join('\n');
-
-  document.getElementById('verdict-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  lastJson=buildExport(f,file,verdict);
+  lastReport=buildTextReport(lastJson);
+  document.getElementById('verdict-wrap').scrollIntoView({behavior:'smooth',block:'start'});
 }
-
-function dedupe(arr) {
-  const seen = new Set();
-  return arr.filter(([k,v]) => { const key = k+'|'+v; if (seen.has(key)) return false; seen.add(key); return true; });
+function putRows(id,cid,rows){
+  document.getElementById(id).innerHTML=table(rows.map(([k,v])=>row(k,v)));
+  document.getElementById(cid).textContent=rows.length?`${rows.length} entr${rows.length===1?'y':'ies'}`:'';
+}
+function buildExport(f,file,verdict){
+  return {
+    report:{tool:'PROVENANCE V2',generatedAt:new Date().toISOString(),verdict},
+    file:{name:file.name||'(pasted image)',size:file.size,type:file.type,lastModified:file.lastModified||null,structure:Object.fromEntries(f.struct)},
+    provenance:{...f.provenance,rawStore:f.provenance.rawStore},
+    evidence:f.evidence,
+    validation:f.validation,
+    exif:f.exif,
+    iptc:f.iptc,
+    text:f.text,
+    warnings:f.warnings
+  };
+}
+function buildTextReport(j){
+  const lines=[];
+  lines.push('PROVENANCE V2 REPORT — '+j.report.generatedAt);
+  lines.push('Verdict: '+j.report.verdict.stamp);
+  lines.push('Confidence: '+j.report.verdict.confidence);
+  lines.push('Reason: '+j.report.verdict.text); lines.push('');
+  lines.push('== AI / PROVENANCE EVIDENCE ==');
+  if(!j.evidence.length)lines.push('(none)');
+  for(const e of j.evidence)lines.push(`[${e.strength.toUpperCase()}${e.authenticated?' / AUTHENTICATED':''}] ${e.label}: ${e.value} — ${e.source}`);
+  lines.push('');
+  const sec=(title,arr)=>{lines.push('== '+title+' ==');if(!arr.length)lines.push('(none)');for(const [k,v] of arr)lines.push(`${k}: ${v}`);lines.push('');};
+  sec('C2PA',j.provenance.rawStore ? [['Validation state',j.provenance.validationState],['Active manifest',j.provenance.activeManifest||'(none)']] : []);
+  sec('C2PA VALIDATION',j.validation);
+  sec('EXIF',j.exif); sec('IPTC',j.iptc); sec('TEXT / XMP',j.text);
+  sec('FILE STRUCTURE',Object.entries(j.file.structure));
+  lines.push('== WARNINGS / LIMITATIONS =='); if(!j.warnings.length)lines.push('(none)'); else j.warnings.forEach(w=>lines.push('- '+w)); lines.push('');
+  lines.push('Negative result note: absence of AI metadata/provenance does not prove human authorship.');
+  return lines.join('\n');
 }
 </script>
 </body>
