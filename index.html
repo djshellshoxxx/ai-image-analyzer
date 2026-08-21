@@ -236,6 +236,12 @@
   </div>
   <div id="results"></div>
 
+  <section class="panel">
+    <h2>Audio / voice forensics</h2>
+    <div class="panel-sub">A separate, independent module for speech/audio — upload a file or analyze your microphone live. Runs container/metadata parsing (WAV/BWF/MP3/FLAC/Ogg/Opus/MP4/M4A, plus AIFF/WebM identification), an optional C2PA check, signal-domain acoustic measurements, and a real AASIST-L anti-spoofing ONNX model (~766 KB, MIT-licensed) on overlapping 4-second windows. AASIST-L is trained for speech anti-spoofing specifically — its published accuracy is excellent in-domain (0.99% EER on ASVspoof2019 LA) but drops sharply on unseen conditions (44.45% EER on In-The-Wild, 50.72% on CD-ADD per its model card), so its score is shown as a labeled anti-spoofing signal, never a universal "AI probability." No audio is uploaded anywhere; only the small runtime/model files are fetched into your browser.</div>
+    <div id="audio-forensics"></div>
+  </section>
+
 </main>
 
 <dialog id="help-modal">
@@ -1718,6 +1724,14 @@ const helpModal = document.getElementById('help-modal');
 document.getElementById('help-open').addEventListener('click', () => helpModal.showModal());
 document.getElementById('help-close').addEventListener('click', () => helpModal.close());
 helpModal.addEventListener('click', e => { if (e.target === helpModal) helpModal.close(); });
+</script>
+
+<script type="module">
+// Audio/voice forensics is a self-contained drop-in module (audio/audio-forensics.js) —
+// its own CSS namespace, its own upload/mic UI, its own detectors. It never touches the
+// image/video verdict pipeline above; mounting it is a single call.
+import { mountAudioForensicsUI } from './audio/audio-forensics.js';
+mountAudioForensicsUI('#audio-forensics');
 </script>
 </body>
 </html>
