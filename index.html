@@ -122,6 +122,53 @@
   footer { margin-top:48px; padding:20px 32px 32px; border-top:3px solid var(--ink); font-size:11.5px; color:#555; line-height:1.7; }
   footer b { color:var(--ink); }
   @media (max-width:650px) { main { padding-inline:18px; } header { padding-inline:18px; } }
+
+  /* ================================================================
+     MOBILE LAYOUT — everything below is scoped inside max-width media
+     queries, so nothing here can ever change the desktop appearance;
+     it only activates on narrow viewports.
+     ================================================================ */
+  @media (max-width: 640px) {
+    body { font-size: 13.5px; border-left: none; border-right: none; }
+    header { padding: 16px 14px 12px; gap: 8px; }
+    .brand { font-size: 1.3rem; }
+    .brand .help-btn { margin-left: 6px; }
+    .tagline { text-align: left; font-size: 10px; letter-spacing: .06em; }
+    main { padding: 0 12px 32px; }
+    section.panel { margin-top: 20px; }
+    section.panel > h2 { font-size: 12px; }
+    .panel-sub { font-size: 11px; line-height: 1.55; }
+
+    #drop { padding: 24px 12px; margin-top: 4px; }
+    #drop .big { font-size: .92rem; }
+    #drop .small { font-size: 10.5px; }
+
+    .method-grid { grid-template-columns: 1fr; gap: 2px 0; }
+    .method-item { padding: 10px 0; }
+    /* Bigger touch targets — checkboxes and the info tooltip trigger are
+       too small to reliably tap at their desktop size. */
+    .method-item input[type=checkbox] { width: 19px; height: 19px; }
+    .info-icon { width: 20px; height: 20px; line-height: 20px; font-size: 12px; }
+    .info-icon .tooltip-box { top: 26px; }
+
+    .adv-mini-grid { grid-template-columns: 1fr; }
+    .adv-model-card { padding: 10px 12px; }
+    .adv-model-card input[type=text], .adv-model-card select { font-size: 16px; } /* prevents iOS auto-zoom on focus */
+
+    #results-toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+    .file-card-head { flex-direction: column; align-items: flex-start; }
+    .file-card { padding: 12px; }
+    .stamp-mini { font-size: 10px; }
+
+    /* Bigger tap targets on every button, without changing desktop sizing. */
+    button.tool, .file-actions button, .adv-model-card button, .help-btn { padding: 11px 15px; min-height: 40px; }
+    .help-btn { width: 32px; height: 32px; min-height: 0; padding: 0; }
+
+    dialog#help-modal { width: 96vw; max-height: 88vh; }
+    #help-inner { padding: 16px; }
+
+    input[type=file] + label, label#drop { font-size: 13px; }
+  }
 </style>
 </head>
 <body>
