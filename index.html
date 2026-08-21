@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PROVENANCE V2 — AI Image Forensics</title>
+<title>PROVENANCE V3 — AI Image Forensics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Archivo:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
@@ -101,6 +101,7 @@
   .badge.strong { color: var(--clean); border-color: var(--clean); }
   .badge.medium { color: var(--warn); border-color: var(--warn); }
   .badge.supporting { color: #555; border-color: #777; }
+  .badge.circumstantial { color: #767066; border-color: #a89f8f; }
   .badge.invalid { color: var(--bad); border-color: var(--bad); }
   .ev-title { font-weight: 800; }
   .ev-value { margin-top: 2px; font-size: 12.5px; }
@@ -110,25 +111,90 @@
   summary { cursor: pointer; font-weight: 600; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--paper-dim); padding: 12px; max-height: 420px; overflow: auto; }
 
+
+  .model-controls { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); background: rgba(255,255,255,.18); display:flex; gap:10px 14px; align-items:center; flex-wrap:wrap; font-size:11px; }
+  .model-controls label { display:flex; align-items:center; gap:6px; }
+  .model-controls select { font:inherit; padding:5px 7px; background:var(--paper); border:1px solid var(--ink); color:var(--ink); }
+  .model-controls button { font:inherit; font-weight:700; padding:6px 9px; border:1px solid var(--ink); background:var(--paper); cursor:pointer; }
+  .model-controls button:hover:not(:disabled) { background:var(--ink); color:var(--paper); }
+  .model-controls button:disabled { opacity:.45; cursor:not-allowed; }
+  .model-note { color:#666; font-size:10.5px; flex-basis:100%; }
+  .badge.model { color:var(--accent); border-color:var(--accent); }
+  .badge.watermark { color:#76520b; border-color:#76520b; }
+  .meter { height:10px; border:1px solid var(--ink); margin-top:5px; max-width:420px; position:relative; background:var(--paper-dim); }
+  .meter > span { display:block; height:100%; background:currentColor; }
+  .metric { padding:8px 0; border-bottom:1px solid var(--line); }
+  .metric b { font-family:var(--disp); }
+
   footer { margin-top: 48px; padding: 20px 32px 32px; border-top: 3px solid var(--ink); font-size: 11.5px; color: #555; line-height: 1.7; }
   footer b { color: var(--ink); }
+
+  /* ---- Advanced Forensic Signals panel (research modules, independent of the verdict) ---- */
+  #adv-panel { display:none; margin-top: 44px; padding-top: 24px; border-top: 3px double var(--ink); }
+  #adv-panel.show { display:block; }
+  #adv-panel h2 { font-family: var(--disp); font-weight:900; font-size:15px; text-transform:uppercase; letter-spacing:.1em; margin:0 0 6px; }
+  #adv-panel .adv-sub { font-size:11.5px; color:#555; margin-bottom:18px; max-width:760px; line-height:1.6; }
+  .adv-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+  @media (max-width: 800px) { .adv-grid { grid-template-columns: 1fr; } }
+  .adv-card { border:1px solid var(--ink); background:rgba(255,255,255,.22); padding:12px 14px; }
+  .adv-card h3 { font-family:var(--disp); font-size:12.5px; margin:0 0 6px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .adv-card .adv-family { font-size:9.5px; color:#666; text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+  .adv-status { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:3px 6px; border:1px solid; }
+  .adv-status.ok { color:var(--clean); border-color:var(--clean); }
+  .adv-status.err { color:var(--bad); border-color:var(--bad); }
+  .adv-status.na { color:#777; border-color:#999; }
+  .adv-status.pending { color:#555; border-color:#999; }
+  .adv-summary { font-size:12px; margin:6px 0; }
+  .adv-score { font-size:11px; color:#444; margin-bottom:4px; }
+  .adv-notes { font-size:10.5px; color:#6b4700; margin-top:4px; }
+  .adv-notes div { margin-top:2px; }
+  .adv-card details { border:none; padding:4px 0 0; }
+  .adv-card summary { font-size:10.5px; color:#555; }
+  .adv-card pre { font-size:10px; max-height:220px; }
+  .adv-heatmap { max-width:100%; margin-top:6px; border:1px solid var(--line); image-rendering:pixelated; }
+
+  .adv-model-section { margin-top: 26px; }
+  .adv-model-card { border:1px dashed var(--line); padding:12px 14px; margin-top:10px; }
+  .adv-model-card h4 { font-family:var(--disp); font-size:12px; margin:0 0 4px; }
+  .adv-model-card .adv-req { font-size:10.5px; color:#8b1e3f; margin-bottom:8px; }
+  .adv-model-card label { display:block; font-size:10.5px; color:#444; margin-top:6px; }
+  .adv-model-card input[type=text], .adv-model-card select { width:100%; font:inherit; font-size:12px; padding:6px 7px; border:1px solid var(--ink); background:var(--paper); margin-top:2px; box-sizing:border-box; }
+  .adv-model-card button { margin-top:10px; font:inherit; font-weight:700; font-size:11.5px; padding:8px 14px; border:1px solid var(--ink); background:var(--ink); color:var(--paper); cursor:pointer; }
+  .adv-model-card button:hover:not(:disabled) { background:var(--accent); border-color:var(--accent); }
+  .adv-model-card button:disabled { opacity:.5; cursor:not-allowed; }
+  .adv-model-result { margin-top:10px; font-size:11.5px; }
+  .adv-checklist-link { font-size:10.5px; color:#555; margin-top:16px; }
   @media (max-width: 650px) { main { padding-inline: 18px; } header { padding-inline: 18px; } td.k { width: 38%; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
 <header>
-  <div><span class="brand">PROVENANCE<span>_</span></span><span class="version">V2</span></div>
-  <div class="tagline">AI image forensics · validated C2PA · EXIF · IPTC · XMP<br>image bytes stay in your browser</div>
+  <div><span class="brand">PROVENANCE<span>_</span></span><span class="version">V3.2</span></div>
+  <div class="tagline">AI image forensics · C2PA · neural pixels · watermarks · EXIF/XMP/IPTC · fingerprints · advanced signals<br>image bytes stay in your browser</div>
 </header>
 
 <main>
   <label id="drop">
     <div class="big">Drop an image, paste, or click to open</div>
-    <div class="small">PNG · JPEG · WebP — analyzed locally; C2PA validator code is fetched from a CDN only when needed</div>
-    <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+    <div class="small">PNG · JPEG · WebP · HEIC/HEIF · AVIF · TIFF — metadata + pixels analyzed locally; model/runtime files are fetched on demand</div>
+    <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.heic,.heif,.avif,.tif,.tiff,image/png,image/jpeg,image/webp,image/heic,image/heif,image/avif,image/tiff">
   </label>
   <div id="status" aria-live="polite"></div>
+
+  <div class="model-controls">
+    <label>Pixel detector
+      <select id="neural-variant">
+        <option value="fp32" selected>Community Forensics FP32 — 83 MB reference</option>
+        <option value="int8">Community Forensics INT8 — 22 MB fast</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="auto-neural" checked> run neural analysis automatically</label>
+    <button type="button" id="run-neural" disabled>Run / re-run neural detector</button>
+    <button type="button" id="run-wam" disabled>Run Meta WAM watermark scan (~374 MB)</button>
+    <div class="model-note">Model/runtime code and weights are downloaded to the browser; the selected image is not uploaded by this page. Meta WAM is manual because its detector is very large.</div>
+  </div>
+  <div id="modelstatus" aria-live="polite"></div>
 
   <div id="verdict-wrap">
     <img id="preview" alt="Exhibit preview">
@@ -147,6 +213,9 @@
 
   <div id="report">
     <section><h2>AI / provenance evidence <span class="count" id="c-ai"></span></h2><div id="ai-body"></div></section>
+    <section><h2>Pixel-level neural analysis <span class="count" id="c-neural"></span></h2><div id="neural-body"></div></section>
+    <section><h2>Invisible watermark analysis <span class="count" id="c-watermark"></span></h2><div id="watermark-body"></div></section>
+    <section><h2>Circumstantial fingerprints <span class="count" id="c-circ"></span></h2><div id="circ-body"></div></section>
     <section><h2>C2PA — validated provenance <span class="count" id="c-c2pa"></span></h2><div id="c2pa-body"></div></section>
     <section><h2>C2PA validation details <span class="count" id="c-validation"></span></h2><div id="validation-body"></div></section>
     <section><h2>EXIF <span class="count" id="c-exif"></span></h2><div id="exif-body"></div></section>
@@ -156,20 +225,92 @@
     <section><h2>Warnings / limitations <span class="count" id="c-warn"></span></h2><div id="warn-body"></div></section>
     <section><h2>Raw validated C2PA JSON <span class="count" id="c-raw"></span></h2><div id="raw-body"></div></section>
   </div>
+
+  <div id="adv-panel">
+    <h2>Advanced forensic signals — experimental</h2>
+    <div class="adv-sub">Twelve independent research-derived modules (spectral, camera-pipeline, bit-plane, color, JPEG-encoder, reconstruction, embedding-distribution and related techniques). <b>None of these feed the verdict above.</b> Most return <code>score: null</code> deliberately — they are uncalibrated statistical measurements, not AI probabilities, until calibrated on your own real/generator corpus. Six run automatically with no downloaded model; the rest need you to host and link your own ONNX weights.</div>
+    <div id="adv-auto-status" style="font-size:11.5px;color:#555;margin-bottom:10px;"></div>
+    <div class="adv-grid" id="adv-auto-grid"></div>
+
+    <div class="adv-model-section">
+      <h2 style="font-size:13px;">Model-backed detectors (self-hosted ONNX required)</h2>
+      <div class="adv-sub">These need weights you export/host yourself — see <code>forensics/MODEL-CONTRACTS.md</code>. Nothing is fetched until you supply a URL and press Run.</div>
+
+      <div class="adv-model-card" id="adv-noiseprint">
+        <h4>Noiseprint++ residual clustering</h4>
+        <div class="adv-req">Requires TWO models: a residual extractor and a frozen feature encoder. No real-image reference is configured here, so this run reports the raw fused embedding only (no real/fake distance).</div>
+        <label>Residual model URL<input type="text" id="np-residual-url" placeholder="https://.../noiseprint-residual.onnx"></label>
+        <label>Feature encoder model URL<input type="text" id="np-feature-url" placeholder="https://.../feature-encoder.onnx"></label>
+        <button type="button" id="np-run" disabled>Run Noiseprint++ embedding</button>
+        <div class="adv-model-result" id="np-result"></div>
+      </div>
+
+      <div class="adv-model-card" id="adv-diffrecon">
+        <h4>Diffusion / autoencoder reconstruction (AEROBLADE / DIRE / FIRE)</h4>
+        <div class="adv-req">Requires an image→image ONNX reconstructor (e.g. an SD VAE round-trip). Uses <code>createSingleOnnxReconstructor</code>.</div>
+        <label>Reconstructor model URL<input type="text" id="dr-model-url" placeholder="https://.../vae-roundtrip.onnx"></label>
+        <button type="button" id="dr-run" disabled>Run reconstruction-error analysis</button>
+        <div class="adv-model-result" id="dr-result"></div>
+      </div>
+
+      <div class="adv-model-card" id="adv-diffprint">
+        <h4>DiffusionPrint patch localization</h4>
+        <div class="adv-req">The official repository has not yet released pretrained checkpoints (as of this build). This only works with your own scalar-output ONNX classifier.</div>
+        <label>Patch classifier model URL<input type="text" id="dp-model-url" placeholder="https://.../diffusionprint-patch.onnx"></label>
+        <label>Output mode
+          <select id="dp-output-mode">
+            <option value="fake-logit">fake-logit (sigmoid)</option>
+            <option value="fake-probability">fake-probability</option>
+            <option value="class-logits">class-logits (softmax)</option>
+          </select>
+        </label>
+        <button type="button" id="dp-run" disabled>Run patch localization</button>
+        <div class="adv-model-result" id="dp-result"></div>
+      </div>
+
+      <div class="adv-model-card" id="adv-gaussian">
+        <h4>Prior-conditioned Gaussian embedding detector</h4>
+        <div class="adv-req">A real/fake posterior needs a reference distribution built from your own labeled images (see README) — not a one-click browser workflow. This button only extracts the raw frozen embedding as a connectivity/sanity check.</div>
+        <label>Frozen encoder model URL<input type="text" id="ge-model-url" placeholder="https://.../frozen-encoder.onnx"></label>
+        <button type="button" id="ge-run" disabled>Extract raw embedding (no reference)</button>
+        <div class="adv-model-result" id="ge-result"></div>
+      </div>
+
+      <div class="adv-model-card" id="adv-editprint">
+        <h4>Editprint processing-history fingerprint</h4>
+        <div class="adv-req">Requires an ONNX export of the official Editprint inference graph. Runs without a reference bank (no processing-chain match shown, just the raw embedding).</div>
+        <label>Editprint model URL<input type="text" id="ep-model-url" placeholder="https://.../editprint.onnx"></label>
+        <button type="button" id="ep-run" disabled>Extract Editprint embedding</button>
+        <div class="adv-model-result" id="ep-result"></div>
+      </div>
+
+      <div class="adv-model-card" id="adv-prnu">
+        <h4>PRNU camera sensor fingerprint</h4>
+        <div class="adv-req">Needs several reference photos from the SAME physical camera, all at the exact same pixel dimensions as the analyzed image. No model download; this runs entirely in-browser.</div>
+        <label>Reference photos (same camera, same dimensions)<input type="file" id="prnu-refs" accept="image/*" multiple></label>
+        <button type="button" id="prnu-run" disabled>Estimate fingerprint &amp; compare</button>
+        <div class="adv-model-result" id="prnu-result"></div>
+      </div>
+
+      <div class="adv-checklist-link">Module status and source citations: see <code>forensics/README.md</code> and <code>forensics/IMPLEMENTATION-CHECKLIST.md</code> in the deployed repo.</div>
+    </div>
+  </div>
 </main>
 
 <footer>
-  <b>Interpret negative results carefully.</b> No metadata-based analyzer can prove that an image is human-made. Screenshots, social-media re-encodes, exports, transcoding, and deliberate metadata removal can destroy provenance. V2 distinguishes cryptographically validated C2PA evidence from ordinary mutable EXIF/XMP/IPTC metadata and from software fingerprints. A C2PA manifest by itself is <b>not</b> treated as evidence of AI generation.
+  <b>Interpret every evidence class according to what it can actually establish.</b> V3 keeps cryptographic provenance, mutable metadata, neural pixel classification, watermark detection, and circumstantial fingerprints separate. A neural detector estimates whether pixels resemble its training distribution; it is not a proof of origin. A detected watermark establishes that the corresponding watermark scheme is present, not necessarily that every pixel was AI-generated. Filename and resolution fingerprints describe how a file was named or sized, not what its pixels contain — they never outrank real evidence. No-result cases remain indeterminate because re-encoding, screenshots, crops, and metadata removal can erase provenance or weaken forensic signals.
 </footer>
 
 <script>
 "use strict";
 
 /* ============================================================
-   PROVENANCE V2
+   PROVENANCE V3.1
    Client-side metadata/provenance analyzer.
    C2PA validation uses the official @contentauth/c2pa-web SDK.
    The image itself is never uploaded by this application.
+   V3.1 adds two circumstantial modules (filename fingerprints,
+   resolution fingerprints) ranked below all real evidence.
    ============================================================ */
 
 const C2PA_WEB_VERSION = '0.14.3';
@@ -178,6 +319,26 @@ const C2PA_WASM_URL = `https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@${C2PA
 const MAX_FILE_BYTES = 512 * 1024 * 1024; // application safety limit; SDK itself supports larger files
 const MAX_PREVIEW_PIXELS = 150_000_000;
 const MAX_DISPLAY_TEXT = 4000;
+
+const ORT_VERSION = '1.27.0';
+const ORT_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort.min.js`;
+const ORT_WASM_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+const COMMUNITY_FORENSICS = Object.freeze({
+  repo: 'buildborderless/CommunityForensics-DeepfakeDet-ViT',
+  fp32: { label:'FP32 reference', bytesApprox:83_000_000, url:'https://huggingface.co/buildborderless/CommunityForensics-DeepfakeDet-ViT/resolve/main/onnx/model.onnx' },
+  int8: { label:'INT8 fast', bytesApprox:22_000_000, url:'https://huggingface.co/buildborderless/CommunityForensics-DeepfakeDet-ViT/resolve/main/onnx/model_int8.onnx' }
+});
+const WAM_MODEL = Object.freeze({
+  label:'Meta Watermark Anything (WAM) MIT detector',
+  url:'https://huggingface.co/neptun-org/wam-onnx/resolve/main/wam-mit-detector.onnx',
+  bytesApprox:373_825_798
+});
+const LIBHEIF_MODULE_URL = 'https://cdn.jsdelivr.net/npm/libheif-js@1.19.8/libheif-wasm/libheif-bundle.mjs';
+const UTIF_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js';
+const C2PA_BMFF_UUID = new Uint8Array([0xD8,0xFE,0xC3,0xD6,0x1B,0x0E,0x48,0x3C,0x92,0x97,0x58,0x28,0x87,0x7E,0xC4,0x81]);
+const C2PA_TIFF_TAG = 0xCD41;
+const MAX_NEURAL_PIXELS = 120_000_000;
+
 
 const DST = Object.freeze({
   AI_GENERATED: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
@@ -190,14 +351,48 @@ const DST = Object.freeze({
   ALGORITHMIC_MEDIA: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia'
 });
 
+/* ---------------- V3.1 circumstantial module data ---------------- */
+// Filename conventions used by AI generators, AI stock categories, and the
+// download paths people commonly save AI images through. These describe how a
+// file was NAMED, not what its pixels contain; strength is capped at
+// 'circumstantial' and they can never outrank metadata, provenance, or pixels.
+const FILENAME_PATTERNS = Object.freeze([
+  { re: /^OIG\d*[._-]/i, hint: 'Bing Image Creator default output name ("OIG" prefix)', weight: 2 },
+  { re: /^ComfyUI[_-]\d+/i, hint: 'ComfyUI default output naming (ComfyUI_#####)', weight: 2 },
+  { re: /ai[-_ ]?generated/i, hint: '"ai-generated" in filename (Pixabay AI-category naming and similar)', weight: 2 },
+  { re: /(midjourney|dall[-·_ ]?e|stable[-_ ]?diffusion|firefly[-_ ]?image|leonardo[-_ ]?ai|ideogram|bing[-_ ]?image[-_ ]?creator|grok[-_ ]?image|gemini[-_ ]?generated|imagen[-_ ]?\d)/i, hint: 'AI tool/model name embedded in filename', weight: 2 },
+  { re: /^(grid|u[1-4])[_-][0-9a-f-]{20,}/i, hint: 'Midjourney grid/upscale export naming', weight: 2 },
+  { re: /^OIP[._-]/i, hint: 'Bing image-search thumbnail cache name ("OIP" prefix) — common when saving search results, including AI images', weight: 1 },
+  { re: /^(download|image|img)[._-]?\d*\.(jfif|jpe?g|png|webp)$/i, hint: 'Browser default download name — file was saved from the web; original name and often metadata discarded', weight: 1 },
+  { re: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jfif|jpe?g|png|webp|avif)$/i, hint: 'Bare UUID filename — typical of generator/CDN exports that discard human naming', weight: 1 }
+]);
+
+// Exact output resolutions that popular diffusion/generation models emit by
+// default (SD 1.x/2.x, SDXL buckets, DALL·E/gpt-image, Bing Image Creator).
+// A match means the dimensions are CONSISTENT with generator output — nothing
+// more. Real photos land on these sizes only via deliberate crops/exports.
+const AI_NATIVE_SIZES = Object.freeze(new Set([
+  '512x512','512x768','768x512','768x768','640x640',
+  '1024x1024','1024x1792','1792x1024','1024x1536','1536x1024',
+  '1152x896','896x1152','1216x832','832x1216','1344x768','768x1344','1536x640','640x1536',
+  '1248x832','832x1248','1408x704','704x1408','1280x1280','2048x2048','1664x936','936x1664'
+]));
+
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
 const statusEl = document.getElementById('status');
+const modelStatusEl = document.getElementById('modelstatus');
 let lastReport = '';
 let lastJson = null;
 let previewObjectUrl = null;
 let analysisRun = 0;
 let c2paSdkPromise = null;
+let ortLoadPromise = null;
+let neuralSessions = new Map();
+let wamSessionPromise = null;
+let libheifPromise = null;
+let utifPromise = null;
+let lastAnalysisContext = null;
 
 /* ---------------- UI wiring ---------------- */
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
@@ -212,6 +407,37 @@ document.addEventListener('paste', e => {
   if (item) analyze(item.getAsFile());
 });
 
+document.getElementById('run-neural').addEventListener('click', async () => {
+  const c = lastAnalysisContext;
+  if (!c?.canvas || !c?.f) return;
+  const run = analysisRun;
+  try {
+    await runNeuralPixelDetector(c.canvas, c.f, document.getElementById('neural-variant').value, true);
+    if (run !== analysisRun) return;
+    const verdict = evaluateVerdict(c.f);
+    render(c.f, c.file, verdict, false);
+  } catch (e) {
+    addWarning(c.f, 'Neural re-run failed: ' + (e?.message || e));
+    modelStatusEl.textContent = 'Neural detector failed: ' + (e?.message || e);
+    render(c.f, c.file, evaluateVerdict(c.f), false);
+  }
+});
+
+document.getElementById('run-wam').addEventListener('click', async () => {
+  const c = lastAnalysisContext;
+  if (!c?.canvas || !c?.f) return;
+  const run = analysisRun;
+  try {
+    await runMetaWamDetector(c.canvas, c.f, true);
+    if (run !== analysisRun) return;
+    render(c.f, c.file, evaluateVerdict(c.f), false);
+  } catch (e) {
+    addWarning(c.f, 'Meta WAM scan failed: ' + (e?.message || e));
+    modelStatusEl.textContent = 'Meta WAM scan failed: ' + (e?.message || e);
+    render(c.f, c.file, evaluateVerdict(c.f), false);
+  }
+});
+
 document.getElementById('copy-report').addEventListener('click', async (e) => {
   try {
     await navigator.clipboard.writeText(lastReport);
@@ -221,8 +447,8 @@ document.getElementById('copy-report').addEventListener('click', async (e) => {
   }
   setTimeout(() => e.target.textContent = 'Copy report', 1500);
 });
-document.getElementById('dl-report').addEventListener('click', () => downloadBlob('provenance-v2-report.txt', 'text/plain', lastReport));
-document.getElementById('dl-json').addEventListener('click', () => downloadBlob('provenance-v2-evidence.json', 'application/json', JSON.stringify(lastJson, null, 2)));
+document.getElementById('dl-report').addEventListener('click', () => downloadBlob('provenance-v3-report.txt', 'text/plain', lastReport));
+document.getElementById('dl-json').addEventListener('click', () => downloadBlob('provenance-v3-evidence.json', 'application/json', JSON.stringify(lastJson, null, 2)));
 
 function downloadBlob(name, type, contents) {
   const blob = new Blob([contents], { type });
@@ -238,7 +464,37 @@ function table(rows) { return rows.length ? `<table>${rows.join('')}</table>` : 
 function td(bytes, encoding='utf-8') { try { return new TextDecoder(encoding, {fatal:false}).decode(bytes); } catch { return new TextDecoder('utf-8', {fatal:false}).decode(bytes); } }
 function shortText(s, max=MAX_DISPLAY_TEXT) { s = String(s ?? ''); return s.length > max ? s.slice(0, max) + `… [${(s.length-max).toLocaleString()} more chars]` : s; }
 function hex(bytes) { return [...bytes].map(b => b.toString(16).padStart(2,'0')).join(''); }
-function safeJson(value) { try { return JSON.stringify(value); } catch { return String(value); } }
+function safeJson(value, pretty=false) {
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(value, (k,v) => {
+      if (typeof v === 'function') return undefined;
+      if (typeof v === 'bigint') return v.toString();
+      if (v instanceof Uint8Array) return `[Uint8Array ${v.length} bytes]`;
+      if (v && typeof v === 'object') {
+        if (seen.has(v)) return '[circular]';
+        seen.add(v);
+      }
+      return v;
+    }, pretty ? 2 : 0);
+  } catch { return String(value); }
+}
+
+function findAllDeep(obj, keyRe, maxDepth=10) {
+  const out=[]; const seen=new WeakSet();
+  (function walk(o,depth,path){
+    if(!o || typeof o!=='object' || depth>maxDepth || seen.has(o)) return;
+    seen.add(o);
+    for(const k of Object.keys(o)){
+      let v; try{v=o[k];}catch{continue;}
+      if(keyRe.test(k)) out.push({path:path?path+'.'+k:k,key:k,value:v});
+      if(v && typeof v==='object') walk(v,depth+1,path?path+'.'+k:k);
+    }
+  })(obj,0,'');
+  return out;
+}
+function findFirstDeep(obj,keyRe,maxDepth=10){ return findAllDeep(obj,keyRe,maxDepth)[0]?.value; }
+
 
 function pushUniquePair(arr, k, v) {
   const key = String(k) + '\u0000' + String(v);
@@ -250,15 +506,40 @@ function addEvidence(f, ev) {
   if (!f.evidence.some(x => [x.type, x.value, x.source, x.authenticated].join('|') === key)) f.evidence.push(ev);
 }
 
+// Claude's version had a useful C2PA string fallback. V3 keeps that idea, but quarantines
+// raw matches as unverified hints: they are displayed for recovery/debugging and NEVER feed the verdict.
+function recordUnverifiedC2paHints(bytes, f, source='raw C2PA container') {
+  if (!bytes?.length) return;
+  const cap = bytes.length > 4*1024*1024 ? bytes.subarray(0,4*1024*1024) : bytes;
+  const text = td(cap,'latin1');
+  const hints = [];
+  if (/compositeWithTrainedAlgorithmicMedia/i.test(text)) hints.push('compositeWithTrainedAlgorithmicMedia');
+  else if (/trainedAlgorithmicMedia/i.test(text)) hints.push('trainedAlgorithmicMedia');
+  if (/digitalCapture/i.test(text)) hints.push('digitalCapture');
+  for (const m of text.match(/c2pa\.watermarked(?:\.bound|\.unbound)?/g) || []) hints.push(m);
+  for (const re of [/gpt-image[-\w.]*/i,/DALL[·-]?E/i,/OpenAI/i,/Adobe Firefly/i,/Midjourney/i,/Stable Diffusion/i,/Imagen/i,/Gemini/i,/Microsoft Designer/i,/FLUX(?:\.1|\.2)?/i]) {
+    const m=text.match(re); if(m) hints.push('agent/text: '+m[0]);
+  }
+  for (const hint of [...new Set(hints)]) {
+    const rec={source,hint,authenticated:false};
+    if(!f.provenance.rawHints.some(x=>x.source===source&&x.hint===hint)) f.provenance.rawHints.push(rec);
+    pushUniquePair(f.c2pa,'Unverified raw C2PA hint',`${hint} — ${source}; not cryptographically validated and not used for the verdict`);
+  }
+}
+
 /* ---------------- Main analysis ---------------- */
 async function analyze(file) {
   const run = ++analysisRun;
   statusEl.textContent = 'Reading file…';
+  modelStatusEl.textContent = '';
   resetUI();
+  lastAnalysisContext = null;
+  document.getElementById('run-neural').disabled = true;
+  document.getElementById('run-wam').disabled = true;
 
   if (!file) return;
   if (file.size > MAX_FILE_BYTES) {
-    statusEl.textContent = `Refused: file is ${(file.size/1024/1024).toFixed(1)} MiB; V2 application limit is ${MAX_FILE_BYTES/1024/1024} MiB.`;
+    statusEl.textContent = `Refused: file is ${(file.size/1024/1024).toFixed(1)} MiB; V3 application limit is ${MAX_FILE_BYTES/1024/1024} MiB.`;
     return;
   }
 
@@ -269,10 +550,13 @@ async function analyze(file) {
   const buf = new Uint8Array(ab);
 
   const f = {
-    evidence: [], c2pa: [], validation: [], exif: [], iptc: [], text: [], struct: [], warnings: [],
+    evidence: [], c2pa: [], validation: [], exif: [], iptc: [], text: [], struct: [], warnings: [], circumstantial: [],
+    neural: {status:'not-run', model:null, variant:null, canonicalFakeProbability:null, ensembleMean:null, min:null, max:null, stddev:null, probes:[], inferenceMs:null},
+    watermarks: [],
     provenance: {
       containerDetected: false, referenceDetected: false, sdkAttempted: false, sdkLoaded: false,
-      validationState: null, activeManifest: null, activeSourceTypes: [], ingredientSourceTypes: [], rawStore: null
+      validationState: null, activeManifest: null, activeSourceTypes: [], ingredientSourceTypes: [], rawStore: null,
+      watermarkActions: [], watermarkDeclarations: [], rawHints: []
     }
   };
 
@@ -281,36 +565,53 @@ async function analyze(file) {
   f.struct.push(['Browser MIME type', file.type || 'unknown']);
   if (file.lastModified) f.struct.push(['Last modified (filesystem)', new Date(file.lastModified).toISOString()]);
 
-  statusEl.textContent = 'Hashing and decoding image header…';
+  statusEl.textContent = 'Hashing and identifying container…';
   try {
     const digest = await crypto.subtle.digest('SHA-256', ab);
     f.struct.push(['SHA-256', hex(new Uint8Array(digest))]);
   } catch (e) { addWarning(f, 'SHA-256 could not be calculated: ' + e.message); }
 
-  setPreview(file);
-  const dimensions = await getImageDimensions(previewObjectUrl);
-  if (dimensions) {
-    f.struct.push(['Dimensions', `${dimensions.width} × ${dimensions.height} px`]);
-    const pixels = dimensions.width * dimensions.height;
-    f.struct.push(['Pixel count', pixels.toLocaleString()]);
-    if (pixels > MAX_PREVIEW_PIXELS) addWarning(f, `Very large image (${pixels.toLocaleString()} pixels); browser decoding may consume substantial memory.`);
-  } else addWarning(f, 'Browser could not decode image dimensions.');
-  if (run !== analysisRun) return;
-
   const format = identifyFormat(buf);
   f.struct.push(['Detected format', format.name]);
-  if (file.type && format.mime && file.type !== format.mime) addWarning(f, `MIME/type mismatch: browser reports ${file.type}, magic bytes identify ${format.mime}.`);
+  if (file.type && format.mime && file.type !== format.mime && !(format.id==='heif' && /image\/hei[cf]/i.test(file.type)))
+    addWarning(f, `MIME/type mismatch: browser reports ${file.type}, magic bytes identify ${format.mime}.`);
+
+  setPreview(file);
+  let dimensions = await getImageDimensions(previewObjectUrl);
+  if (run !== analysisRun) return;
 
   statusEl.textContent = 'Parsing container and mutable metadata…';
   try {
     if (format.id === 'png') await parsePNG(buf, f);
     else if (format.id === 'jpeg') parseJPEG(buf, f);
     else if (format.id === 'webp') parseWEBP(buf, f);
-    else addWarning(f, 'Unsupported file structure. Only PNG, JPEG, and WebP are parsed by V2.');
+    else if (format.id === 'heif' || format.id === 'avif') parseISOBMFFImage(buf, f, format);
+    else if (format.id === 'tiff') parseStandaloneTIFF(buf, f);
+    else addWarning(f, 'No dedicated structural parser is available for this format.');
   } catch (e) {
     addWarning(f, 'Container parser stopped on malformed or unexpected data: ' + e.message);
   }
   scanStrings(buf, f);
+  if (run !== analysisRun) return;
+
+  let pixelCanvas = null;
+  try {
+    statusEl.textContent = 'Decoding pixels for preview / neural analysis…';
+    pixelCanvas = await decodePixelCanvas(file, ab, format, f);
+    if (pixelCanvas) {
+      const p = pixelCanvas.width * pixelCanvas.height;
+      if (!dimensions) {
+        dimensions = {width:pixelCanvas.width,height:pixelCanvas.height};
+        await setCanvasPreview(pixelCanvas);
+      }
+      if (!f.struct.some(([k])=>k==='Dimensions')) f.struct.push(['Dimensions', `${pixelCanvas.width} × ${pixelCanvas.height} px`]);
+      if (!f.struct.some(([k])=>k==='Pixel count')) f.struct.push(['Pixel count', p.toLocaleString()]);
+      if (p > MAX_PREVIEW_PIXELS) addWarning(f, `Very large image (${p.toLocaleString()} pixels); browser decoding may consume substantial memory.`);
+    }
+  } catch (e) {
+    addWarning(f, 'Pixel decoder could not produce an RGB canvas: ' + (e?.message || e));
+  }
+  if (!dimensions && !pixelCanvas) addWarning(f, 'Browser/custom decoders could not decode image dimensions or pixels. Metadata analysis can still continue.');
   if (run !== analysisRun) return;
 
   if (f.provenance.containerDetected || f.provenance.referenceDetected) {
@@ -321,9 +622,96 @@ async function analyze(file) {
   }
   if (run !== analysisRun) return;
 
+  // Explicitly record proprietary watermark support state without pretending to detect it.
+  registerVendorWatermarkCapabilities(f);
+
+  // V3.1 circumstantial modules: filename + resolution fingerprints. Run after
+  // metadata parsing (so the camera-EXIF context row is accurate) and ranked
+  // below every other evidence class — they can only produce hints.
+  runCircumstantialModules(f, file, dimensions);
+
+  lastAnalysisContext = {file, ab, buf, format, f, canvas:pixelCanvas};
+  document.getElementById('run-neural').disabled = !pixelCanvas;
+  document.getElementById('run-wam').disabled = !pixelCanvas;
+
+  if (pixelCanvas && document.getElementById('auto-neural').checked) {
+    const pixels = pixelCanvas.width * pixelCanvas.height;
+    if (pixels <= MAX_NEURAL_PIXELS) {
+      try {
+        await runNeuralPixelDetector(pixelCanvas, f, document.getElementById('neural-variant').value, false);
+      } catch (e) {
+        addWarning(f, 'Pixel-level neural detector unavailable: ' + (e?.message || e));
+        f.neural.status = 'error';
+        f.neural.error = String(e?.message || e);
+      }
+    } else {
+      f.neural.status = 'skipped-large-image';
+      addWarning(f, `Neural detector skipped automatically because the decoded image has ${pixels.toLocaleString()} pixels (> ${MAX_NEURAL_PIXELS.toLocaleString()}); resize a copy or run manually if your browser has sufficient memory.`);
+    }
+  }
+  if (run !== analysisRun) return;
+
   const verdict = evaluateVerdict(f);
   statusEl.textContent = 'Analysis complete.';
-  render(f, file, verdict);
+  modelStatusEl.textContent = f.neural.status === 'complete' ? 'Pixel-level neural analysis complete.' : modelStatusEl.textContent;
+  render(f, file, verdict, true);
+}
+
+/* ---------------- V3.1 circumstantial modules ---------------- */
+function runCircumstantialModules(f, file, dimensions) {
+  // Module 1: filename fingerprint
+  const name = String(file.name || '').trim();
+  if (name) {
+    let matched = false;
+    for (const pat of FILENAME_PATTERNS) {
+      if (pat.re.test(name)) {
+        matched = true;
+        f.circumstantial.push(['Filename fingerprint', `${pat.hint} — matched "${name}"`]);
+        addEvidence(f, {
+          type: 'FILENAME_FINGERPRINT', strength: 'circumstantial', authenticated: false,
+          classification: pat.weight >= 2 ? 'ai_hint' : 'weak_hint',
+          label: pat.weight >= 2 ? 'Filename matches an AI-generator/AI-stock naming convention' : 'Filename suggests a web-saved file with discarded original name',
+          value: pat.hint, source: 'Filename heuristic module — describes how the file was named, not what its pixels contain'
+        });
+      }
+    }
+    if (!matched) f.circumstantial.push(['Filename fingerprint', `No known AI-service or web-download naming convention matched "${name}"`]);
+  } else {
+    f.circumstantial.push(['Filename fingerprint', 'Not applicable — pasted image has no original filename']);
+  }
+
+  // Module 2: resolution fingerprint
+  if (dimensions?.width && dimensions?.height) {
+    const key = `${dimensions.width}x${dimensions.height}`;
+    if (AI_NATIVE_SIZES.has(key)) {
+      f.circumstantial.push(['Resolution fingerprint', `${key} exactly matches a default output size of common AI image generators`]);
+      addEvidence(f, {
+        type: 'RESOLUTION_FINGERPRINT', strength: 'circumstantial', authenticated: false, classification: 'ai_hint',
+        label: 'Dimensions exactly match a known AI-generator default output size',
+        value: key, source: 'Resolution fingerprint module — consistent with generator output; deliberate crops/exports can also land on these sizes'
+      });
+    } else if (dimensions.width === dimensions.height && dimensions.width >= 512 && dimensions.width % 64 === 0) {
+      f.circumstantial.push(['Resolution fingerprint', `${key} is an exact square with a side divisible by 64 — weakly consistent with diffusion-model output`]);
+      addEvidence(f, {
+        type: 'RESOLUTION_FINGERPRINT', strength: 'circumstantial', authenticated: false, classification: 'weak_hint',
+        label: 'Square dimensions divisible by 64 (weak diffusion-output pattern)',
+        value: key, source: 'Resolution fingerprint module'
+      });
+    } else {
+      f.circumstantial.push(['Resolution fingerprint', `${key} does not match known AI-generator default output sizes`]);
+    }
+  } else {
+    f.circumstantial.push(['Resolution fingerprint', 'Not evaluated — image dimensions could not be decoded']);
+  }
+
+  // Module 3: camera-metadata absence, recorded as context only — never scored,
+  // because AI output, screenshots, and every web re-encode all look identical here.
+  const hasCameraExif = f.exif.some(([k]) => /(Make|Model|ExposureTime|FNumber|ISO|FocalLength|LensModel)$/.test(k));
+  if (!hasCameraExif) {
+    f.circumstantial.push(['Camera metadata', 'No camera EXIF present — expected for AI output, screenshots, and any web re-encode; carries no weight on its own']);
+  } else {
+    f.circumstantial.push(['Camera metadata', 'Camera EXIF fields are present (note: EXIF is trivially forgeable and can also survive AI editing)']);
+  }
 }
 
 function resetUI() {
@@ -349,6 +737,16 @@ function identifyFormat(buf) {
   if (buf.length >= 8 && [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((v,i)=>buf[i]===v)) return {id:'png', name:'PNG', mime:'image/png'};
   if (buf.length >= 3 && buf[0]===0xff && buf[1]===0xd8 && buf[2]===0xff) return {id:'jpeg', name:'JPEG', mime:'image/jpeg'};
   if (buf.length >= 12 && ascii(buf,0,4)==='RIFF' && ascii(buf,8,4)==='WEBP') return {id:'webp', name:'WebP', mime:'image/webp'};
+  if (buf.length >= 8 && ((buf[0]===0x49&&buf[1]===0x49&&buf[2]===0x2a&&buf[3]===0x00)||(buf[0]===0x4d&&buf[1]===0x4d&&buf[2]===0x00&&buf[3]===0x2a)||(buf[0]===0x49&&buf[1]===0x49&&buf[2]===0x2b&&buf[3]===0x00)||(buf[0]===0x4d&&buf[1]===0x4d&&buf[2]===0x00&&buf[3]===0x2b))) return {id:'tiff',name:'TIFF / BigTIFF',mime:'image/tiff'};
+  if (buf.length >= 16 && ascii(buf,4,4)==='ftyp') {
+    const boxLen = Math.min(buf.length, new DataView(buf.buffer,buf.byteOffset,buf.byteLength).getUint32(0,false) || buf.length);
+    const brands = [];
+    if (buf.length >= 12) brands.push(ascii(buf,8,4));
+    for (let p=16; p+4<=boxLen; p+=4) brands.push(ascii(buf,p,4));
+    if (brands.some(b=>b==='avif'||b==='avis')) return {id:'avif',name:'AVIF (ISO BMFF)',mime:'image/avif',brands};
+    if (brands.some(b=>['heic','heix','hevc','hevx','heim','heis','mif1','msf1'].includes(b))) return {id:'heif',name:'HEIC / HEIF (ISO BMFF)',mime:'image/heic',brands};
+    return {id:'bmff',name:'ISO BMFF (unsupported image brand)',mime:null,brands};
+  }
   return {id:'unknown', name:'Unknown / unsupported', mime:null};
 }
 function ascii(buf, start, len) { return String.fromCharCode(...buf.subarray(start, start+len)); }
@@ -377,6 +775,7 @@ async function parsePNG(buf, f) {
     if (type === 'caBX') {
       f.provenance.containerDetected = true;
       pushUniquePair(f.c2pa, 'Raw container', `PNG caBX chunk present (${len.toLocaleString()} bytes); AI status is not inferred from presence alone`);
+      recordUnverifiedC2paHints(data,f,'PNG caBX');
     } else if (type === 'eXIf') {
       parseEXIF(data, 0, f, 'PNG eXIf');
     } else if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
@@ -491,6 +890,7 @@ function parseJPEG(buf, f) {
       if (/jumb|c2pa/i.test(s)) {
         f.provenance.containerDetected = true;
         pushUniquePair(f.c2pa, 'Raw container', `JPEG APP11/JUMBF segment present (${data.length.toLocaleString()} bytes); AI status is not inferred from presence alone`);
+        recordUnverifiedC2paHints(data,f,'JPEG APP11/JUMBF');
       }
     } else if (marker === 0xed) parseAPP13(data, f);
 
@@ -585,6 +985,7 @@ function parseWEBP(buf, f) {
     } else if (fourcc === 'C2PA' || /c2pa|jumb/i.test(td(data.subarray(0,Math.min(96,data.length)),'latin1'))) {
       f.provenance.containerDetected = true;
       pushUniquePair(f.c2pa,'Raw container',`WebP ${fourcc.trim() || 'unnamed'} chunk contains C2PA/JUMBF data (${size.toLocaleString()} bytes); presence alone is not AI evidence`);
+      recordUnverifiedC2paHints(data,f,`WebP ${fourcc.trim() || 'C2PA'} chunk`);
     }
     pos=paddedEnd;
   }
@@ -741,7 +1142,7 @@ const IPTC_DATASETS = {
   '2:80':'Byline','2:85':'BylineTitle','2:90':'City','2:95':'ProvinceState','2:101':'CountryCode','2:105':'Headline','2:110':'Credit','2:115':'Source',
   '2:116':'CopyrightNotice','2:120':'CaptionAbstract','2:122':'WriterEditor'
 };
-function parseIPTCIIM(bytes,f){
+function parseIPTCIIM(bytes,f,source='JPEG APP13 IPTC'){
   let p=0, utf8=false;
   while(p+5<=bytes.length){
     if(bytes[p]!==0x1c){p++;continue;}
@@ -758,7 +1159,7 @@ function parseIPTCIIM(bytes,f){
     const value=td(valBytes,utf8?'utf-8':'latin1').replace(/\0+$/,'');
     const name=IPTC_DATASETS[key] || `Dataset ${key}`;
     pushUniquePair(f.iptc,name,shortText(value));
-    inspectMetadataText(name,value,f,'JPEG APP13 IPTC');
+    inspectMetadataText(name,value,f,source);
   }
 }
 
@@ -791,6 +1192,354 @@ function inspectMetadataText(key, value, f, source) {
   const comfyKey=/^(workflow|prompt)$/i.test(k.trim());
   const comfyJson=comfyKey && /"(?:class_type|inputs)"\s*:/i.test(v) && /(KSampler|CheckpointLoader|CLIPTextEncode|SaveImage)/i.test(v);
   if(comfyJson) addEvidence(f,{type:'GENERATION_SCHEMA',strength:'medium',authenticated:false,classification:'ai_possible',label:'ComfyUI workflow/prompt schema',value:`Structured ${k} JSON contains ComfyUI node signatures`,source});
+}
+
+
+/* ---------------- HEIC / HEIF / AVIF — ISO BMFF custom parser ---------------- */
+function u64Safe(dv, off) {
+  const hi=dv.getUint32(off,false), lo=dv.getUint32(off+4,false);
+  const n=hi*4294967296+lo;
+  return Number.isSafeInteger(n)?n:null;
+}
+function bytesEqual(a,b){ if(!a||!b||a.length!==b.length)return false; for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false; return true; }
+function readBmffBoxes(buf,start=0,end=buf.length,depth=0,path=''){
+  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength), out=[];
+  let p=start, guard=0;
+  while(p+8<=end && guard++<100000){
+    let size=dv.getUint32(p,false), type=ascii(buf,p+4,4), header=8;
+    if(size===1){ if(p+16>end)break; size=u64Safe(dv,p+8); header=16; if(size===null)break; }
+    else if(size===0) size=end-p;
+    if(size<header || p+size>end) break;
+    let userType=null;
+    if(type==='uuid' && size>=header+16){ userType=buf.slice(p+header,p+header+16); header+=16; }
+    out.push({start:p,size,type,header,payloadStart:p+header,payloadEnd:p+size,end:p+size,depth,path:(path?path+'/':'')+type,userType});
+    p += size;
+  }
+  return out;
+}
+function bmffChildBoxes(buf,box,fullBoxSkip=0){ return readBmffBoxes(buf,box.payloadStart+fullBoxSkip,box.payloadEnd,box.depth+1,box.path); }
+function readSizedUnsigned(buf, off, size){
+  if(size===0)return 0; if(size>8||off+size>buf.length)return null;
+  let n=0; for(let i=0;i<size;i++)n=n*256+buf[off+i]; return Number.isSafeInteger(n)?n:null;
+}
+function cString(buf,start,end){ let p=start; while(p<end&&buf[p]!==0)p++; return {value:td(buf.slice(start,p),'utf-8'),next:Math.min(end,p+1)}; }
+
+function parseISOBMFFImage(buf,f,format){
+  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
+  const top=readBmffBoxes(buf);
+  if(!top.length){ addWarning(f,'ISO BMFF parser could not enumerate boxes.'); return; }
+  const summary={}; top.forEach(b=>summary[b.type]=(summary[b.type]||0)+1);
+  f.struct.push(['BMFF top-level boxes',Object.entries(summary).map(([k,v])=>v>1?`${k}×${v}`:k).join(', ')]);
+  const ftyp=top.find(b=>b.type==='ftyp');
+  if(ftyp && ftyp.payloadEnd-ftyp.payloadStart>=8){
+    const major=ascii(buf,ftyp.payloadStart,4), minor=dv.getUint32(ftyp.payloadStart+4,false), compat=[];
+    for(let p=ftyp.payloadStart+8;p+4<=ftyp.payloadEnd;p+=4)compat.push(ascii(buf,p,4));
+    f.struct.push(['BMFF major brand',major]); f.struct.push(['BMFF minor version',String(minor)]); f.struct.push(['BMFF compatible brands',compat.join(', ')||'(none)']);
+  }
+  let c2paCount=0;
+  for(const b of top){
+    if(b.type==='uuid' && bytesEqual(b.userType,C2PA_BMFF_UUID)){
+      c2paCount++; f.provenance.containerDetected=true;
+      const purposeStart=b.payloadStart+4; // FullBox version/flags
+      const purpose=cString(buf,purposeStart,Math.min(b.payloadEnd,purposeStart+64)).value;
+      pushUniquePair(f.c2pa,'Raw BMFF C2PA uuid box',`#${c2paCount} · purpose=${purpose||'(unreadable)'} · ${b.size.toLocaleString()} bytes; presence alone is not AI evidence`);
+      recordUnverifiedC2paHints(buf.subarray(b.payloadStart,b.payloadEnd),f,`${format.name} C2PA uuid #${c2paCount}`);
+    }
+  }
+  if(c2paCount) f.struct.push(['C2PA BMFF uuid boxes',String(c2paCount)]);
+
+  const meta=top.find(b=>b.type==='meta');
+  if(!meta){ addWarning(f,'HEIF/AVIF file has no top-level meta box visible to the custom parser.'); return; }
+  const children=bmffChildBoxes(buf,meta,4);
+  const childNames={};children.forEach(b=>childNames[b.type]=(childNames[b.type]||0)+1);
+  f.struct.push(['meta child boxes',Object.entries(childNames).map(([k,v])=>v>1?`${k}×${v}`:k).join(', ')]);
+
+  const info=new Map(); const locations=new Map(); let idat=null; let primary=null;
+  const pitm=children.find(b=>b.type==='pitm');
+  if(pitm){ const ver=buf[pitm.payloadStart]; const p=pitm.payloadStart+4; primary=ver===0?dv.getUint16(p,false):dv.getUint32(p,false); f.struct.push(['Primary item ID',String(primary)]); }
+
+  const iinf=children.find(b=>b.type==='iinf');
+  if(iinf){
+    const ver=buf[iinf.payloadStart], countOff=iinf.payloadStart+4;
+    const count=ver===0?dv.getUint16(countOff,false):dv.getUint32(countOff,false);
+    const entryStart=countOff+(ver===0?2:4);
+    for(const infe of readBmffBoxes(buf,entryStart,iinf.payloadEnd,2,'meta/iinf')){
+      if(infe.type!=='infe')continue;
+      const v=buf[infe.payloadStart], p=infe.payloadStart+4; let id,itemType,name='',contentType='';
+      if(v===2){ id=dv.getUint16(p,false); itemType=ascii(buf,p+4,4); let q=p+8; const a=cString(buf,q,infe.payloadEnd);name=a.value;q=a.next;if(itemType==='mime'){const b=cString(buf,q,infe.payloadEnd);contentType=b.value;} }
+      else if(v>=3){ id=dv.getUint32(p,false); itemType=ascii(buf,p+6,4); let q=p+10; const a=cString(buf,q,infe.payloadEnd);name=a.value;q=a.next;if(itemType==='mime'){const b=cString(buf,q,infe.payloadEnd);contentType=b.value;} }
+      if(id!=null)info.set(id,{id,itemType,name,contentType});
+    }
+    f.struct.push(['HEIF item-info entries parsed',`${info.size} (iinf declared ${count})`]);
+  }
+  const idatBox=children.find(b=>b.type==='idat'); if(idatBox)idat={start:idatBox.payloadStart,end:idatBox.payloadEnd};
+  const iloc=children.find(b=>b.type==='iloc');
+  if(iloc){
+    try{
+      const ver=buf[iloc.payloadStart], p0=iloc.payloadStart+4;
+      const offsetSize=buf[p0]>>4, lengthSize=buf[p0]&15, baseOffsetSize=buf[p0+1]>>4, indexSize=(ver===1||ver===2)?(buf[p0+1]&15):0;
+      let p=p0+2, count; if(ver<2){count=dv.getUint16(p,false);p+=2;}else{count=dv.getUint32(p,false);p+=4;}
+      for(let i=0;i<count && p<iloc.payloadEnd;i++){
+        let id;if(ver<2){id=dv.getUint16(p,false);p+=2;}else{id=dv.getUint32(p,false);p+=4;}
+        let method=0;if(ver===1||ver===2){method=dv.getUint16(p,false)&0x000f;p+=2;}
+        const dataRef=dv.getUint16(p,false);p+=2;
+        const base=readSizedUnsigned(buf,p,baseOffsetSize);p+=baseOffsetSize;
+        const extentCount=dv.getUint16(p,false);p+=2; const extents=[];
+        for(let j=0;j<extentCount;j++){
+          if((ver===1||ver===2)&&indexSize){p+=indexSize;}
+          const off=readSizedUnsigned(buf,p,offsetSize);p+=offsetSize; const len=readSizedUnsigned(buf,p,lengthSize);p+=lengthSize;
+          extents.push({off:off||0,len:len||0});
+        }
+        locations.set(id,{method,dataRef,base:base||0,extents});
+      }
+      f.struct.push(['HEIF item-location entries parsed',String(locations.size)]);
+    }catch(e){addWarning(f,'iloc parsing stopped: '+e.message);}
+  }
+
+  // Find dimensions from ispe property boxes (report first plausible candidate).
+  const iprp=children.find(b=>b.type==='iprp');
+  if(iprp){
+    const props=bmffChildBoxes(buf,iprp,0); const ipco=props.find(b=>b.type==='ipco');
+    if(ipco){
+      for(const pb of bmffChildBoxes(buf,ipco,0)){
+        if(pb.type==='ispe' && pb.payloadStart+12<=pb.payloadEnd){
+          const w=dv.getUint32(pb.payloadStart+4,false), h=dv.getUint32(pb.payloadStart+8,false);
+          if(w&&h){f.struct.push(['HEIF/AVIF coded dimensions',`${w} × ${h} px`]);break;}
+        }
+      }
+    }
+  }
+
+  function itemBytes(id){
+    const loc=locations.get(id); if(!loc||loc.dataRef!==0)return null; const parts=[]; let total=0;
+    for(const ex of loc.extents){
+      let st=(loc.base||0)+(ex.off||0); if(loc.method===1){ if(!idat)return null; st=idat.start+st; }
+      const en=ex.len?st+ex.len:buf.length; if(st<0||en>buf.length||en<st)return null; const part=buf.slice(st,en);parts.push(part);total+=part.length;
+    }
+    const out=new Uint8Array(total);let q=0;for(const p of parts){out.set(p,q);q+=p.length;}return out;
+  }
+  for(const [id,inf] of info){
+    const b=itemBytes(id); if(!b||!b.length)continue;
+    if(inf.itemType==='Exif'){
+      let tiff=0; // HEIF Exif item begins with a 4-byte offset to TIFF header in common files.
+      if(b.length>=4){const o=new DataView(b.buffer,b.byteOffset,b.byteLength).getUint32(0,false); if(4+o+4<=b.length)tiff=4+o;}
+      const hdr=findTiffHeader(b,tiff,Math.min(b.length,tiff+32)); if(hdr>=0)parseEXIF(b,hdr,f,`${format.name} Exif item ${id}`);
+      pushUniquePair(f.text,`${format.name} Exif item`,`${inf.name||'Exif'} · ${b.length.toLocaleString()} bytes`);
+    }else if(inf.itemType==='mime' && /(?:rdf\+xml|xml|xmp)/i.test(inf.contentType||inf.name)){
+      const x=td(b,'utf-8'); parseXMP(x,f,`${format.name} XMP item ${id}`); pushUniquePair(f.text,`${format.name} XMP item`,shortText(x));
+    }
+  }
+}
+
+function findTiffHeader(bytes,start=0,end=bytes.length){
+  for(let i=Math.max(0,start);i+4<=Math.min(bytes.length,end);i++){
+    if((bytes[i]===0x49&&bytes[i+1]===0x49&&bytes[i+2]===0x2a&&bytes[i+3]===0x00)||(bytes[i]===0x4d&&bytes[i+1]===0x4d&&bytes[i+2]===0x00&&bytes[i+3]===0x2a))return i;
+  } return -1;
+}
+
+/* ---------------- Standalone TIFF / BigTIFF custom parser ---------------- */
+const TIFF_TYPE_SIZE_V3={1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8,16:8,17:8,18:8};
+function parseStandaloneTIFF(buf,f){
+  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength); if(buf.length<8)throw new Error('TIFF header truncated');
+  const little=dv.getUint16(0,false)===0x4949; if(!little&&dv.getUint16(0,false)!==0x4d4d)throw new Error('Invalid TIFF byte-order marker');
+  const magic=dv.getUint16(2,little); f.struct.push(['TIFF byte order',little?'little-endian (II)':'big-endian (MM)']);
+  f.struct.push(['TIFF variant',magic===42?'Classic TIFF':magic===43?'BigTIFF':`Unknown magic ${magic}`]);
+  if(magic===42){ parseEXIF(buf,0,f,'Standalone TIFF'); parseStandaloneTiffIfds(buf,f,false,little); }
+  else if(magic===43){ parseStandaloneTiffIfds(buf,f,true,little); }
+  else throw new Error('Unsupported TIFF magic');
+}
+function parseStandaloneTiffIfds(buf,f,big,little){
+  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength); const inline=big?8:4, entrySize=big?20:12;
+  let first;
+  if(big){ const offSize=dv.getUint16(4,little),zero=dv.getUint16(6,little); if(offSize!==8||zero!==0)throw new Error('Unsupported BigTIFF offset layout'); first=u64SafeEndian(dv,8,little); }
+  else first=dv.getUint32(4,little);
+  let ifd=first, nIfd=0; const visited=new Set(); let width=null,height=null;
+  while(ifd && ifd<buf.length && nIfd<64 && !visited.has(ifd)){
+    visited.add(ifd); nIfd++; let count,p;
+    if(big){count=u64SafeEndian(dv,ifd,little);p=ifd+8;}else{count=dv.getUint16(ifd,little);p=ifd+2;}
+    if(count===null||count>100000)break;
+    for(let i=0;i<count;i++){
+      const e=p+i*entrySize;if(e+entrySize>buf.length)break;
+      const tag=dv.getUint16(e,little), type=dv.getUint16(e+2,little); let cnt,valField;
+      if(big){cnt=u64SafeEndian(dv,e+4,little);valField=e+12;}else{cnt=dv.getUint32(e+4,little);valField=e+8;}
+      const bytes=getStandaloneTiffValueBytes(buf,dv,e,type,cnt,little,big); if(!bytes)continue;
+      if(tag===256)width=readTiffScalar(bytes,type,little); else if(tag===257)height=readTiffScalar(bytes,type,little);
+      else if(tag===259)pushUniquePair(f.struct,'TIFF compression',String(readTiffScalar(bytes,type,little)));
+      else if(tag===262)pushUniquePair(f.struct,'TIFF photometric interpretation',String(readTiffScalar(bytes,type,little)));
+      else if(tag===277)pushUniquePair(f.struct,'TIFF samples/pixel',String(readTiffScalar(bytes,type,little)));
+      else if(tag===305){const v=td(bytes).replace(/\0+$/,'');pushUniquePair(f.exif,'Software',v);inspectMetadataText('Software',v,f,'Standalone TIFF tag 305');}
+      else if(tag===700){const x=td(bytes,'utf-8');pushUniquePair(f.text,'TIFF XMP packet',shortText(x));parseXMP(x,f,'Standalone TIFF XMP tag 700');}
+      else if(tag===33723){pushUniquePair(f.iptc,'TIFF IPTC tag 33723',`${bytes.length.toLocaleString()} bytes`); try{parseIPTCIIM(bytes,f,'Standalone TIFF IPTC');}catch{} }
+      else if(tag===34377){pushUniquePair(f.iptc,'TIFF Photoshop tag 34377',`${bytes.length.toLocaleString()} bytes`); inspectMetadataText('TIFF Photoshop resources',td(bytes,'latin1'),f,'Standalone TIFF');}
+      else if(tag===C2PA_TIFF_TAG){f.provenance.containerDetected=true;pushUniquePair(f.c2pa,'Raw TIFF C2PA tag',`Tag 0xCD41 / 52545 present (${bytes.length.toLocaleString()} bytes); presence alone is not AI evidence`);recordUnverifiedC2paHints(bytes,f,'TIFF C2PA tag 0xCD41');}
+    }
+    const nextPos=p+count*entrySize; if(nextPos+(big?8:4)>buf.length)break; ifd=big?u64SafeEndian(dv,nextPos,little):dv.getUint32(nextPos,little);
+  }
+  f.struct.push(['TIFF IFDs traversed',String(nIfd)]); if(width&&height)f.struct.push(['TIFF dimensions',`${width} × ${height} px`]);
+}
+function u64SafeEndian(dv,off,little){
+  if(off+8>dv.byteLength)return null; const lo=little?dv.getUint32(off,true):dv.getUint32(off+4,false), hi=little?dv.getUint32(off+4,true):dv.getUint32(off,false); const n=hi*4294967296+lo; return Number.isSafeInteger(n)?n:null;
+}
+function getStandaloneTiffValueBytes(buf,dv,e,type,count,little,big){
+  const sz=TIFF_TYPE_SIZE_V3[type];if(!sz||count==null)return null;const total=sz*count;if(!Number.isSafeInteger(total)||total<0||total>buf.length)return null;const inline=big?8:4, valPos=big?e+12:e+8;
+  let off;if(total<=inline)off=valPos;else off=big?u64SafeEndian(dv,valPos,little):dv.getUint32(valPos,little);if(off==null||off<0||off+total>buf.length)return null;return buf.slice(off,off+total);
+}
+function readTiffScalar(bytes,type,little){
+  if(!bytes?.length)return null;const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);try{if(type===3)return dv.getUint16(0,little);if(type===4)return dv.getUint32(0,little);if(type===8)return dv.getInt16(0,little);if(type===9)return dv.getInt32(0,little);if(type===16||type===18)return u64SafeEndian(dv,0,little);return bytes[0];}catch{return null;}
+}
+
+/* ---------------- Pixel decoding ---------------- */
+async function decodePixelCanvas(file,ab,format,f){
+  try{
+    if(typeof createImageBitmap==='function'){
+      const bmp=await createImageBitmap(file);
+      const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d',{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close?.();return c;
+    }
+  }catch{}
+  if(format.id==='heif'||format.id==='avif')return await decodeHeifWithLibheif(ab,f);
+  if(format.id==='tiff')return await decodeTiffWithUTIF(ab,f);
+  // final HTMLImageElement fallback
+  return await decodeViaImageElement(file);
+}
+async function decodeViaImageElement(file){
+  const url=URL.createObjectURL(file);try{return await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0);resolve(c);};im.onerror=()=>reject(new Error('browser image decoder rejected file'));im.src=url;});}finally{URL.revokeObjectURL(url);}
+}
+async function getLibheif(){ if(!libheifPromise)libheifPromise=import(LIBHEIF_MODULE_URL).then(m=>m.default||m);return libheifPromise; }
+async function decodeHeifWithLibheif(ab,f){
+  modelStatusEl.textContent='Loading libheif decoder for HEIC/AVIF pixels…'; const libheif=await getLibheif(); const decoder=new libheif.HeifDecoder(); const imgs=decoder.decode(new Uint8Array(ab)); if(!imgs?.length)throw new Error('libheif found no decodable image item');
+  const image=imgs[0],w=image.get_width(),h=image.get_height(); const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});const id=ctx.createImageData(w,h);
+  await new Promise((resolve,reject)=>image.display(id,d=>d?resolve():reject(new Error('libheif display failed')))); ctx.putImageData(id,0,0); pushUniquePair(f.struct,'Pixel decoder','libheif-js 1.19.8 fallback'); return c;
+}
+async function loadScript(url,globalName){ if(globalName&&globalThis[globalName])return globalThis[globalName]; await new Promise((resolve,reject)=>{const sc=document.createElement('script');sc.src=url;sc.crossOrigin='anonymous';sc.onload=resolve;sc.onerror=()=>reject(new Error('Could not load '+url));document.head.appendChild(sc);}); return globalName?globalThis[globalName]:true; }
+async function getUTIF(){ if(!utifPromise)utifPromise=loadScript(UTIF_SCRIPT_URL,'UTIF');return utifPromise; }
+async function decodeTiffWithUTIF(ab,f){
+  modelStatusEl.textContent='Loading TIFF pixel decoder…'; const UTIF=await getUTIF();const ifds=UTIF.decode(ab);if(!ifds?.length)throw new Error('UTIF found no IFD');UTIF.decodeImage(ab,ifds[0]);const rgba=UTIF.toRGBA8(ifds[0]);const w=ifds[0].width,h=ifds[0].height;if(!w||!h)throw new Error('TIFF pixel dimensions unavailable');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba),w,h),0,0);pushUniquePair(f.struct,'Pixel decoder','UTIF.js 3.1.0 fallback');return c;
+}
+async function setCanvasPreview(canvas){
+  const blob=await new Promise(r=>canvas.toBlob(r,'image/png')); if(!blob)return; if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=URL.createObjectURL(blob);document.getElementById('preview').src=previewObjectUrl;
+}
+
+/* ---------------- ONNX Runtime + Community Forensics neural detector ---------------- */
+async function getOrt(){
+  if(!ortLoadPromise)ortLoadPromise=(async()=>{await loadScript(ORT_SCRIPT_URL,'ort');ort.env.wasm.wasmPaths=ORT_WASM_BASE;ort.env.wasm.numThreads=Math.max(1,Math.min(4,(navigator.hardwareConcurrency||2)));return ort;})();
+  return ortLoadPromise;
+}
+async function fetchArrayBufferWithProgress(url,label){
+  const r=await fetch(url);if(!r.ok)throw new Error(`${label} download failed: HTTP ${r.status}`);const total=Number(r.headers.get('content-length'))||0;if(!r.body)return await r.arrayBuffer();const reader=r.body.getReader(),chunks=[];let got=0;while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);got+=value.length;modelStatusEl.textContent=total?`${label}: ${(got/1048576).toFixed(1)} / ${(total/1048576).toFixed(1)} MiB (${Math.round(got/total*100)}%)`:`${label}: ${(got/1048576).toFixed(1)} MiB downloaded`;}
+  const out=new Uint8Array(got);let p=0;for(const c of chunks){out.set(c,p);p+=c.length;}return out.buffer;
+}
+async function getNeuralSession(variant){
+  variant=variant==='int8'?'int8':'fp32';if(neuralSessions.has(variant))return neuralSessions.get(variant);const p=(async()=>{const runtime=await getOrt();const cfg=COMMUNITY_FORENSICS[variant];const ab=await fetchArrayBufferWithProgress(cfg.url,`Downloading ${cfg.label} neural model`);modelStatusEl.textContent=`Initializing ${cfg.label} neural model…`;return await runtime.InferenceSession.create(ab,{executionProviders:['wasm'],graphOptimizationLevel:'all'});})();neuralSessions.set(variant,p);try{return await p;}catch(e){neuralSessions.delete(variant);throw e;}
+}
+function communityForensicsTensor(canvas,region=null){
+  let sx=0,sy=0,sw=canvas.width,sh=canvas.height;if(region){sx=Math.max(0,Math.round(region.x*canvas.width));sy=Math.max(0,Math.round(region.y*canvas.height));sw=Math.max(1,Math.round(region.w*canvas.width));sh=Math.max(1,Math.round(region.h*canvas.height));}
+  const scale=440/Math.min(sw,sh),rw=Math.max(384,Math.round(sw*scale)),rh=Math.max(384,Math.round(sh*scale));const r=document.createElement('canvas');r.width=rw;r.height=rh;r.getContext('2d',{willReadFrequently:true}).drawImage(canvas,sx,sy,sw,sh,0,0,rw,rh);const x=Math.floor((rw-384)/2),y=Math.floor((rh-384)/2),d=r.getContext('2d',{willReadFrequently:true}).getImageData(x,y,384,384).data;
+  const mean=[0.48145466,0.4578275,0.40821073],std=[0.26862954,0.26130258,0.27577711],plane=384*384,out=new Float32Array(3*plane);for(let i=0,j=0;i<plane;i++,j+=4){out[i]=(d[j]/255-mean[0])/std[0];out[plane+i]=(d[j+1]/255-mean[1])/std[1];out[2*plane+i]=(d[j+2]/255-mean[2])/std[2];}return out;
+}
+function sigmoid(x){return x>=0?1/(1+Math.exp(-x)):Math.exp(x)/(1+Math.exp(x));}
+async function neuralProbe(session,canvas,region){const runtime=await getOrt();const data=communityForensicsTensor(canvas,region);const input=new runtime.Tensor('float32',data,[1,3,384,384]);const name=session.inputNames[0]||'pixel_values';const out=await session.run({[name]:input});const tensor=out[session.outputNames[0]]||Object.values(out)[0];const logit=Number(tensor.data[0]);return {logit,fakeProbability:sigmoid(logit)};}
+function mean(a){return a.reduce((x,y)=>x+y,0)/a.length;}function stddev(a){const m=mean(a);return Math.sqrt(mean(a.map(x=>(x-m)*(x-m))));}
+async function runNeuralPixelDetector(canvas,f,variant='fp32',manual=false){
+  f.evidence=f.evidence.filter(e=>e.type!=='NEURAL_PIXEL_CLASSIFIER');f.neural={status:'running',model:COMMUNITY_FORENSICS.repo,variant,canonicalFakeProbability:null,ensembleMean:null,min:null,max:null,stddev:null,probes:[],inferenceMs:null};
+  const session=await getNeuralSession(variant);const t0=performance.now();const probes=[['canonical',null],['center',{x:.125,y:.125,w:.75,h:.75}],['top-left',{x:0,y:0,w:.72,h:.72}],['top-right',{x:.28,y:0,w:.72,h:.72}],['bottom-left',{x:0,y:.28,w:.72,h:.72}],['bottom-right',{x:.28,y:.28,w:.72,h:.72}]];const vals=[];
+  for(let i=0;i<probes.length;i++){modelStatusEl.textContent=`Neural pixel analysis ${i+1}/${probes.length}: ${probes[i][0]}…`;const r=await neuralProbe(session,canvas,probes[i][1]);vals.push(r.fakeProbability);f.neural.probes.push({name:probes[i][0],fakeProbability:r.fakeProbability,logit:r.logit});}
+  const canonical=vals[0],m=mean(vals),sd=stddev(vals);Object.assign(f.neural,{status:'complete',variant,variantLabel:COMMUNITY_FORENSICS[variant].label,canonicalFakeProbability:canonical,ensembleMean:m,min:Math.min(...vals),max:Math.max(...vals),stddev:sd,inferenceMs:performance.now()-t0});
+  let strength=null,label='';if(canonical>=.90&&m>=.82&&sd<=.18){strength='model';label='Neural pixels strongly resemble AI-generated imagery';}else if(canonical>=.65||m>=.68){strength='model';label='Neural pixels lean toward AI-generated imagery';}
+  if(strength)addEvidence(f,{type:'NEURAL_PIXEL_CLASSIFIER',strength,authenticated:false,classification:'ai_possible',label,value:`canonical ${(canonical*100).toFixed(1)}% fake · 6-probe mean ${(m*100).toFixed(1)}% · spread ${(sd*100).toFixed(1)} pp`,source:`Community Forensics ViT · ${COMMUNITY_FORENSICS[variant].label} · pixel-model estimate`});
+  modelStatusEl.textContent=`Neural complete — canonical fake probability ${(canonical*100).toFixed(1)}%, probe mean ${(m*100).toFixed(1)}%.`;
+}
+
+/* ---------------- Invisible watermark analysis ---------------- */
+function registerVendorWatermarkCapabilities(f){
+  const has=(vendor,method)=>f.watermarks.some(w=>w.vendor===vendor&&w.method===method);
+  // These rows deliberately distinguish a real local detector from schemes for which vendors
+  // expose only their own verifier/API. A capability row is never treated as positive evidence.
+  if(!has('Meta','WAM'))f.watermarks.push({vendor:'Meta',scheme:'Watermark Anything (WAM)',method:'WAM',status:'available-manual',result:'Local pixel detector available',detail:'The public MIT WAM detector can be run locally in-browser. The ONNX detector is ~374 MB, so it is opt-in.'});
+  if(!has('OpenAI','SynthID'))f.watermarks.push({vendor:'OpenAI',scheme:'SynthID',method:'SynthID',status:'external-verifier-only',result:'No local detector available',detail:'Current OpenAI image provenance uses SynthID plus C2PA. OpenAI Verify can check OpenAI-specific SynthID, but no public local SynthID detector/model is exposed for this page to run.'});
+  if(!has('Google','SynthID'))f.watermarks.push({vendor:'Google',scheme:'SynthID',method:'SynthID',status:'external-verifier-only',result:'No public local detector available',detail:'SynthID is proprietary; supported verification is provided through Google/OpenAI surfaces rather than a downloadable browser detector.'});
+  if(!has('Microsoft','Invisible provenance watermark'))f.watermarks.push({vendor:'Microsoft',scheme:'Invisible provenance watermark',method:'Invisible provenance watermark',status:'external-api-only',result:'No local detector available',detail:'Microsoft exposes detection through its provenance detection capabilities/API; the detector weights are not public, so V3 does not simulate a local result.'});
+  if(!has('Meta','Stable Signature'))f.watermarks.push({vendor:'Meta',scheme:'Stable Signature',method:'Stable Signature',status:'key-required',result:'Generic local yes/no test not enabled',detail:'The public extractor decodes a 48-bit message, but attribution requires the expected watermark key / compatible model. Without that key, claiming a vendor-positive result would be unsound.'});
+
+  // Also surface vendor/scheme names found in ordinary mutable metadata, without calling them a pixel detection.
+  const mutableBlob=[...(f.text||[]),...(f.exif||[]),...(f.iptc||[])].map(x=>Array.isArray(x)?x.join(' '):String(x)).join('\n');
+  for(const [re,vendor,scheme] of [
+    [/SynthID/i,'Google/OpenAI','SynthID'],
+    [/Watermark Anything|\bWAM\b/i,'Meta','Watermark Anything (WAM)'],
+    [/Stable Signature/i,'Meta','Stable Signature'],
+    [/Digimarc/i,'Digimarc','Digimarc watermark']
+  ]){
+    if(re.test(mutableBlob) && !f.watermarks.some(w=>w.method==='mutable-metadata'&&w.scheme===scheme))
+      f.watermarks.push({vendor,scheme,method:'mutable-metadata',status:'metadata-mention',result:'Scheme/vendor name found in mutable metadata',detail:'This is a text/metadata mention only; it is not a pixel-level watermark verification.'});
+  }
+}
+function recordC2paWatermarkSignals(obj,f,scope,state){
+  const txt=safeJson(obj||{});const actionHits=[...txt.matchAll(/c2pa\.watermarked(?:\.bound|\.unbound)?/g)].map(m=>m[0]);
+  for(const a of [...new Set(actionHits)]){f.provenance.watermarkActions.push(a);f.watermarks.push({vendor:'C2PA',scheme:'Content Credentials soft binding',method:'validated-provenance',status:state==='Trusted'||state==='Valid'?'declared-in-validated-manifest':'declared',result:a,detail:`${scope}; declaration records watermarking but is not a pixel-level detector.`});}
+  for(const [re,vendor,scheme] of [[/SynthID/i,'Google','SynthID'],[/Watermark Anything|\bWAM\b/i,'Meta','Watermark Anything (WAM)'],[/Stable Signature/i,'Meta','Stable Signature'],[/Content Credentials|c2pa\.watermarked/i,'C2PA','Content Credentials']]){
+    if(re.test(txt))f.provenance.watermarkDeclarations.push({vendor,scheme,scope,state});
+  }
+}
+async function getWamSession(){
+  if(!wamSessionPromise)wamSessionPromise=(async()=>{
+    const runtime=await getOrt();
+    // Let ORT fetch the ~374 MB graph directly instead of retaining our own second ArrayBuffer copy.
+    // This lowers peak browser memory substantially compared with fetchArrayBufferWithProgress().
+    modelStatusEl.textContent='Loading Meta WAM detector (~374 MB; this can use substantial RAM)…';
+    return await runtime.InferenceSession.create(WAM_MODEL.url,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+  })();
+  try{return await wamSessionPromise;}catch(e){wamSessionPromise=null;throw e;}
+}
+function wamInputTensor(canvas){const c=document.createElement('canvas');c.width=256;c.height=256;c.getContext('2d',{willReadFrequently:true}).drawImage(canvas,0,0,256,256);const d=c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,256,256).data,plane=65536,out=new Float32Array(3*plane),mu=[.485,.456,.406],sd=[.229,.224,.225];for(let i=0,j=0;i<plane;i++,j+=4){out[i]=(d[j]/255-mu[0])/sd[0];out[plane+i]=(d[j+1]/255-mu[1])/sd[1];out[2*plane+i]=(d[j+2]/255-mu[2])/sd[2];}return out;}
+function largestConnectedMask(binary,w=256,h=256){
+  const seen=new Uint8Array(binary.length);let best=0,components=0;
+  const stack=new Int32Array(binary.length);
+  for(let i=0;i<binary.length;i++){
+    if(!binary[i]||seen[i])continue;components++;let sp=0,count=0;stack[sp++]=i;seen[i]=1;
+    while(sp){const q=stack[--sp],x=q%w,y=(q/w)|0;count++;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;const n=ny*w+nx;
+        if(binary[n]&&!seen[n]){seen[n]=1;stack[sp++]=n;}
+      }
+    }
+    if(count>best)best=count;
+  }
+  return {largest:best,components};
+}
+function bitsToHex(bits){let s='';for(let i=0;i<bits.length;i+=4){let n=0;for(let j=0;j<4;j++)n=(n<<1)|(bits[i+j]||0);s+=n.toString(16).toUpperCase();}return s;}
+async function runMetaWamDetector(canvas,f,manual=false){
+  f.watermarks=f.watermarks.filter(w=>w.method!=='WAM-pixel');
+  const session=await getWamSession(),runtime=await getOrt(),data=wamInputTensor(canvas),input=new runtime.Tensor('float32',data,[1,3,256,256]);
+  modelStatusEl.textContent='Running Meta WAM invisible-watermark detector…';
+  const t0=performance.now(),out=await session.run({[session.inputNames[0]||'image']:input}),ten=out[session.outputNames[0]]||Object.values(out)[0],arr=ten.data,plane=256*256;
+  if(!arr || arr.length < 33*plane) throw new Error(`Unexpected WAM output shape/length (${arr?.length||0}; expected at least ${33*plane})`);
+  let sum=0,above50=0,above75=0,maxp=0;const mask=new Uint8Array(plane);
+  for(let i=0;i<plane;i++){const p=sigmoid(Number(arr[i]));sum+=p;if(p>=.5){above50++;mask[i]=1;}if(p>=.75)above75++;if(p>maxp)maxp=p;}
+  const avg=sum/plane,frac=above50/plane,strong=above75/plane,cc=largestConnectedMask(mask,256,256);
+
+  // WAM channels 1..32 are message-bit logits. Recover one message from mask-positive pixels
+  // and measure how consistently each bit agrees across the localized region.
+  const decoded=[];let consistency=0;
+  if(above50){
+    for(let b=0;b<32;b++){
+      let ones=0,n=0;const base=(b+1)*plane;
+      for(let i=0;i<plane;i++)if(mask[i]){if(Number(arr[base+i])>0)ones++;n++;}
+      const bit=ones>=n/2?1:0;decoded.push(bit);consistency+=Math.max(ones,n-ones)/n;
+    }
+    consistency/=32;
+  }
+  const message=decoded.length===32?bitsToHex(decoded):null;
+
+  // The official examples use sigmoid(mask logits) and spatial/message clustering; they do not
+  // publish a universal yes/no threshold. V3 therefore uses a conservative, explicitly labeled
+  // heuristic: a coherent >=500-pixel region plus message-bit agreement, rather than scattered hits.
+  let result,status;
+  if(cc.largest>=500 && consistency>=.65){result='WAM-LIKE WATERMARK DETECTED';status='positive';}
+  else if(cc.largest>=200 || above50>=500 || maxp>=.98){result='POSSIBLE WAM WATERMARK';status='ambiguous';}
+  else{result='No WAM watermark detected';status='negative';}
+  const details=[`mean mask ${(avg*100).toFixed(2)}%`,`pixels ≥0.50 ${(frac*100).toFixed(2)}%`,`pixels ≥0.75 ${(strong*100).toFixed(2)}%`,`largest connected region ${cc.largest.toLocaleString()} px`,`components ${cc.components.toLocaleString()}`,decoded.length?`bit consistency ${(consistency*100).toFixed(1)}%`:null,message?`decoded 32-bit message 0x${message}`:null,`max ${(maxp*100).toFixed(2)}%`,`${(performance.now()-t0).toFixed(0)} ms`].filter(Boolean).join(' · ');
+  f.watermarks.push({vendor:'Meta',scheme:'Watermark Anything (WAM)',method:'WAM-pixel',status,result,detail:`${details}. Decision threshold is a V3 heuristic; mask/message tensors come directly from the public WAM detector.`});
+  if(status==='positive')addEvidence(f,{type:'INVISIBLE_WATERMARK',strength:'watermark',authenticated:false,classification:'watermark_present',label:'Meta WAM-like invisible watermark detected in pixels',value:`largest region ${cc.largest} px · bit consistency ${(consistency*100).toFixed(1)}%${message?` · message 0x${message}`:''}`,source:'Meta WAM MIT detector via ONNX; watermark presence does not by itself prove AI generation'});
+  modelStatusEl.textContent=`Meta WAM scan complete — ${result}.`;
 }
 
 /* ---------------- Raw whole-file fallback ---------------- */
@@ -841,7 +1590,7 @@ async function validateC2PA(file,f){
   }
 }
 function guessMimeFromName(name=''){
-  if(/\.png$/i.test(name))return'image/png'; if(/\.webp$/i.test(name))return'image/webp'; return'image/jpeg';
+  if(/\.png$/i.test(name))return'image/png'; if(/\.webp$/i.test(name))return'image/webp'; if(/\.avif$/i.test(name))return'image/avif'; if(/\.hei[cf]$/i.test(name))return'image/heic'; if(/\.tiff?$/i.test(name))return'image/tiff'; return'image/jpeg';
 }
 
 function flattenValidation(store,f){
@@ -865,6 +1614,7 @@ function analyzeManifestStore(store,f){
   if(!active){ addWarning(f,'C2PA active_manifest label does not resolve to a manifest object.'); return; }
   const state=store.validation_state || 'Unknown';
   const authenticated=state==='Trusted' || state==='Valid';
+  recordC2paWatermarkSignals(active,f,'active manifest',state);
   const strength=state==='Trusted'?'strong':state==='Valid'?'strong':'invalid';
 
   pushManifestSummary(active,f,'Active manifest');
@@ -910,6 +1660,14 @@ function analyzeManifestStore(store,f){
     }
   });
 
+  // Defensive fallback borrowed from the comparison implementation: SDK field names can move between versions.
+  // Only use this to expose/report fields; the active manifest and SDK validation state still govern authentication.
+  if(!f.provenance.activeSourceTypes.length){
+    for(const hit of findAllDeep(active,/digitalSourceType|digital_source_type/i,10)){
+      if(typeof hit.value==='string'){pushUniquePair(f.c2pa,'Deep-scan digitalSourceType',`${hit.value} @ ${hit.path}`);}
+    }
+  }
+
   if(state==='Invalid') addEvidence(f,{type:'C2PA_INVALID',strength:'invalid',authenticated:false,classification:'provenance_invalid',label:'C2PA validation failed',value:'Errors were found in the manifest store; AI declarations inside it are not treated as authenticated.',source:'Official C2PA validator'});
 }
 
@@ -948,19 +1706,38 @@ function evaluateVerdict(f){
   const unsignedEdited=f.evidence.find(e=>e.type==='UNSIGNED_DIGITAL_SOURCE_TYPE' && e.classification==='ai_edited');
   const schema=f.evidence.find(e=>e.type==='GENERATION_SCHEMA');
   const software=f.evidence.find(e=>e.type==='SOFTWARE_FINGERPRINT');
+  // V3.1: circumstantial fingerprints. 'ai_hint' items point specifically at AI
+  // conventions (Bing OIG, Pixabay ai-generated-*, generator-native sizes);
+  // 'weak_hint' items only indicate a generic web save. Only ai_hint counts
+  // toward the circumstantial verdict tier, and even then two are required.
+  const circHints=f.evidence.filter(e=>e.strength==='circumstantial' && e.classification==='ai_hint');
+  const circKinds=[...new Set(circHints.map(e=>e.type==='FILENAME_FINGERPRINT'?'filename':'resolution'))];
+  const circNote=circHints.length?` ${circHints.length} circumstantial fingerprint(s) (${circKinds.join(' + ')}) are also consistent with saved AI-generator output, but never establish it.`:'';
+  const neural=f.neural?.status==='complete'?f.neural:null;
+  const neuralHigh=neural && neural.canonicalFakeProbability>=.90 && neural.ensembleMean>=.82 && neural.stddev<=.18;
+  const neuralPossible=neural && (neural.canonicalFakeProbability>=.65 || neural.ensembleMean>=.68);
+  const trustedCapture=(state==='Trusted'||state==='Valid') && f.provenance.activeSourceTypes.some(x=>/\/digitalCapture$/.test(x));
 
   if(state==='Invalid') return {code:'PROVENANCE_INVALID',stamp:'INVALID PROVENANCE',className:'bad',confidence:'C2PA validation: INVALID',text:'Content Credentials are present but failed validation. Treat declarations inside the invalid manifest as unauthenticated; review validation failures below.'};
-  if(activeGenerated) return {code:'AI_GENERATED',stamp:'AI-GENERATED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares that the active asset was created using Generative AI.':'Cryptographically valid C2PA provenance declares that the active asset was created using Generative AI; the active signer is not trusted by the configured trust store.'};
-  if(activeEdited) return {code:'AI_EDITED',stamp:'AI-EDITED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares Generative-AI editing of the active asset.':'Cryptographically valid C2PA provenance declares Generative-AI editing; the active signer is not trusted by the configured trust store.'};
+  if(activeGenerated) return {code:'AI_GENERATED',stamp:'AI-GENERATED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'MEDIUM-HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares that the active asset was created using Generative AI.':'Cryptographically valid C2PA provenance declares that the active asset was created using Generative AI; the active signer is not trusted by the configured trust store.'};
+  if(activeEdited) return {code:'AI_EDITED',stamp:'AI-EDITED',className:'ai',confidence:state==='Trusted'?'HIGH — TRUSTED C2PA':'MEDIUM-HIGH — VALID C2PA, SIGNER NOT TRUSTED',text:state==='Trusted'?'Trusted C2PA provenance declares Generative-AI editing of the active asset.':'Cryptographically valid C2PA provenance declares Generative-AI editing; the active signer is not trusted by the configured trust store.'};
   if(ingredientAI) return {code:'AI_DERIVED',stamp:'AI-DERIVED',className:'warn',confidence:'HIGH — VALIDATED PROVENANCE CHAIN',text:'The active manifest does not itself declare AI generation, but its validated provenance chain contains an ingredient with an AI origin/edit declaration.'};
+  if(trustedCapture && neuralHigh) return {code:'CONFLICTING_SIGNALS',stamp:'CONFLICTING SIGNALS',className:'warn',confidence:'REVIEW REQUIRED',text:'Validated C2PA provenance describes a digital capture, while the pixel classifier strongly resembles synthetic imagery. Do not collapse these into one score: inspect the provenance chain, edits, and neural probe consistency.'};
   if(unsignedGenerated || unsignedEdited) return {code:'AI_METADATA',stamp:'AI METADATA',className:'warn',confidence:'MEDIUM — MUTABLE / UNSIGNED METADATA',text:`Mutable metadata declares ${unsignedGenerated?'AI-generated origin':'Generative-AI editing'}, but this declaration is not authenticated by a valid C2PA manifest.`};
   if(schema) return {code:'POSSIBLE_AI',stamp:'POSSIBLE AI',className:'warn',confidence:'MEDIUM — GENERATION WORKFLOW METADATA',text:'Generation-workflow metadata strongly resembles an AI image tool, but no authenticated AI provenance was found.'};
+  if(neuralHigh) return {code:'LIKELY_AI_PIXELS',stamp:'LIKELY AI',className:'warn',confidence:'PIXEL MODEL — STRONG SCORE, NOT PROVENANCE',text:`The Community Forensics pixel model strongly classifies the image as synthetic (canonical ${(neural.canonicalFakeProbability*100).toFixed(1)}%; 6-probe mean ${(neural.ensembleMean*100).toFixed(1)}%). This is a statistical model result, not cryptographic proof.${circNote}`};
+  if(neuralPossible) return {code:'POSSIBLE_AI_PIXELS',stamp:'POSSIBLE AI',className:'warn',confidence:'PIXEL MODEL — MODERATE SIGNAL',text:`The pixel-level neural detector leans synthetic (canonical ${(neural.canonicalFakeProbability*100).toFixed(1)}%; probe mean ${(neural.ensembleMean*100).toFixed(1)}%), but the score is not strong enough to treat as provenance.${circNote}`};
   if(software) return {code:'POSSIBLE_AI',stamp:'POSSIBLE AI',className:'warn',confidence:'LOW–MEDIUM — SOFTWARE/MODEL FINGERPRINT',text:'AI-related software or model names were found in mutable metadata. This is supporting evidence, not proof of how the current pixels were created.'};
-  return {code:'NO_AI_METADATA',stamp:'NO AI METADATA',className:'clean',confidence:'INDETERMINATE',text:'No metadata/provenance evidence of AI generation was found. This does not establish that the image is authentic or human-made.'};
+  // V3.1 circumstantial-only tier: the weakest verdict class above "clean".
+  // Two independent AI-consistent fingerprints (e.g. filename AND resolution)
+  // are required, which keeps ordinary web downloads from being flagged.
+  if(circHints.length>=2 && circKinds.length>=2) return {code:'CIRCUMSTANTIAL_HINTS',stamp:'CIRCUMSTANTIAL HINTS',className:'warn',confidence:'VERY LOW — FILENAME + RESOLUTION FINGERPRINTS ONLY',text:'No metadata, provenance, pixel, or watermark evidence was found, but the filename follows a known AI-service naming convention AND the dimensions exactly match a generator-native output size. These fingerprints describe how the file was named and sized, not what its pixels contain — treat this only as a prompt to run the neural detector or find the original source.'};
+  if(neural && neural.canonicalFakeProbability<=.20 && neural.ensembleMean<=.25) return {code:'NO_AI_EVIDENCE',stamp:'NO AI EVIDENCE',className:'clean',confidence:'INDETERMINATE — PIXEL MODEL LEANS REAL',text:`No metadata/provenance evidence of AI generation was found, and the pixel model leans real (canonical ${(neural.canonicalFakeProbability*100).toFixed(1)}%). Neither fact proves human authorship or authenticity.${circNote}`};
+  return {code:'NO_AI_METADATA',stamp:'NO AI METADATA',className:'clean',confidence:'INDETERMINATE',text:`No metadata/provenance evidence of AI generation was found. This does not establish that the image is authentic or human-made.${circNote}`};
 }
 
 /* ---------------- Rendering/report ---------------- */
-function render(f,file,verdict){
+function render(f,file,verdict,scroll=true){
   document.getElementById('report').style.display='block';
   document.getElementById('verdict-wrap').classList.add('show');
   document.getElementById('toolbar').classList.add('show');
@@ -973,6 +1750,9 @@ function render(f,file,verdict){
   document.getElementById('ai-body').innerHTML=evHtml;
   document.getElementById('c-ai').textContent=f.evidence.length?`${f.evidence.length} finding${f.evidence.length===1?'':'s'}`:'';
 
+  renderNeural(f.neural);
+  renderWatermarks(f.watermarks);
+  putRows('circ-body','c-circ',f.circumstantial||[]);
   putRows('c2pa-body','c-c2pa',f.c2pa);
   putRows('validation-body','c-validation',f.validation);
   putRows('exif-body','c-exif',f.exif);
@@ -986,7 +1766,7 @@ function render(f,file,verdict){
 
   const raw=document.getElementById('raw-body');
   if(f.provenance.rawStore){
-    raw.innerHTML=`<details><summary>Show JSON returned by the official C2PA Reader</summary><pre>${esc(JSON.stringify(f.provenance.rawStore,null,2))}</pre></details>`;
+    raw.innerHTML=`<details><summary>Show JSON returned by the official C2PA Reader</summary><pre>${esc(safeJson(f.provenance.rawStore,true))}</pre></details>`;
     document.getElementById('c-raw').textContent='available';
   }else{
     raw.innerHTML='<div class="empty">No validated manifest store available</div>'; document.getElementById('c-raw').textContent='';
@@ -994,18 +1774,35 @@ function render(f,file,verdict){
 
   lastJson=buildExport(f,file,verdict);
   lastReport=buildTextReport(lastJson);
-  document.getElementById('verdict-wrap').scrollIntoView({behavior:'smooth',block:'start'});
+  if(scroll)document.getElementById('verdict-wrap').scrollIntoView({behavior:'smooth',block:'start'});
 }
+function renderNeural(n){
+  const el=document.getElementById('neural-body');
+  if(!n||n.status==='not-run'){el.innerHTML='<div class="empty">Not run. Enable automatic neural analysis or use the button above.</div>';document.getElementById('c-neural').textContent='';return;}
+  if(n.status!=='complete'){el.innerHTML=`<div class="empty">${esc(n.status)}${n.error?' — '+esc(n.error):''}</div>`;document.getElementById('c-neural').textContent=n.status;return;}
+  const rows=[['Model',`${n.model} · ${n.variantLabel||n.variant}`],['Canonical fake probability',(n.canonicalFakeProbability*100).toFixed(2)+'%'],['6-probe mean',(n.ensembleMean*100).toFixed(2)+'%'],['Probe range',`${(n.min*100).toFixed(2)}% – ${(n.max*100).toFixed(2)}%`],['Probe standard deviation',(n.stddev*100).toFixed(2)+' percentage points'],['Decision policy','V3 conservative heuristic: strong if canonical ≥90%, probe mean ≥82%, stddev ≤18 pp; probes are diagnostic, not model-calibrated'],['Inference time',`${n.inferenceMs.toFixed(0)} ms (model download/init excluded)`]];
+  const probes=n.probes.map(p=>row('Probe '+p.name,(p.fakeProbability*100).toFixed(2)+'% fake'));
+  el.innerHTML=table(rows.map(([k,v])=>row(k,v)))+`<details><summary>Show spatial probe scores</summary><table>${probes.join('')}</table></details>`;
+  document.getElementById('c-neural').textContent='pixel model';
+}
+function renderWatermarks(ws){
+  const el=document.getElementById('watermark-body');if(!ws?.length){el.innerHTML='<div class="empty">No watermark checks or declarations recorded</div>';document.getElementById('c-watermark').textContent='';return;}
+  const rows=ws.map(w=>row(`${w.vendor} · ${w.scheme}`,`${w.result} — ${w.detail}`));el.innerHTML=table(rows);document.getElementById('c-watermark').textContent=`${ws.length} entr${ws.length===1?'y':'ies'}`;
+}
+
 function putRows(id,cid,rows){
   document.getElementById(id).innerHTML=table(rows.map(([k,v])=>row(k,v)));
   document.getElementById(cid).textContent=rows.length?`${rows.length} entr${rows.length===1?'y':'ies'}`:'';
 }
 function buildExport(f,file,verdict){
   return {
-    report:{tool:'PROVENANCE V2',generatedAt:new Date().toISOString(),verdict},
+    report:{tool:'PROVENANCE V3.1',generatedAt:new Date().toISOString(),verdict},
     file:{name:file.name||'(pasted image)',size:file.size,type:file.type,lastModified:file.lastModified||null,structure:Object.fromEntries(f.struct)},
     provenance:{...f.provenance,rawStore:f.provenance.rawStore},
     evidence:f.evidence,
+    neural:f.neural,
+    watermarks:f.watermarks,
+    circumstantial:f.circumstantial,
     validation:f.validation,
     exif:f.exif,
     iptc:f.iptc,
@@ -1015,7 +1812,7 @@ function buildExport(f,file,verdict){
 }
 function buildTextReport(j){
   const lines=[];
-  lines.push('PROVENANCE V2 REPORT — '+j.report.generatedAt);
+  lines.push('PROVENANCE V3.1 REPORT — '+j.report.generatedAt);
   lines.push('Verdict: '+j.report.verdict.stamp);
   lines.push('Confidence: '+j.report.verdict.confidence);
   lines.push('Reason: '+j.report.verdict.text); lines.push('');
@@ -1023,15 +1820,229 @@ function buildTextReport(j){
   if(!j.evidence.length)lines.push('(none)');
   for(const e of j.evidence)lines.push(`[${e.strength.toUpperCase()}${e.authenticated?' / AUTHENTICATED':''}] ${e.label}: ${e.value} — ${e.source}`);
   lines.push('');
+  lines.push('== PIXEL-LEVEL NEURAL ANALYSIS ==');
+  if(j.neural?.status==='complete'){
+    lines.push(`Model: ${j.neural.model} (${j.neural.variantLabel||j.neural.variant})`);
+    lines.push(`Canonical fake probability: ${(j.neural.canonicalFakeProbability*100).toFixed(2)}%`);
+    lines.push(`6-probe mean: ${(j.neural.ensembleMean*100).toFixed(2)}%`);
+    lines.push(`Range: ${(j.neural.min*100).toFixed(2)}% - ${(j.neural.max*100).toFixed(2)}%`);
+    lines.push(`Stddev: ${(j.neural.stddev*100).toFixed(2)} percentage points`);
+    for(const p of j.neural.probes||[])lines.push(`Probe ${p.name}: ${(p.fakeProbability*100).toFixed(2)}% fake`);
+  }else lines.push(`Status: ${j.neural?.status||'not-run'}`);
+  lines.push('');
+  lines.push('== INVISIBLE WATERMARK ANALYSIS ==');
+  if(!j.watermarks?.length)lines.push('(none)');else for(const w of j.watermarks)lines.push(`${w.vendor} / ${w.scheme}: ${w.result} — ${w.detail}`);
+  lines.push('');
   const sec=(title,arr)=>{lines.push('== '+title+' ==');if(!arr.length)lines.push('(none)');for(const [k,v] of arr)lines.push(`${k}: ${v}`);lines.push('');};
+  sec('CIRCUMSTANTIAL FINGERPRINTS',j.circumstantial||[]);
   sec('C2PA',j.provenance.rawStore ? [['Validation state',j.provenance.validationState],['Active manifest',j.provenance.activeManifest||'(none)']] : []);
   sec('C2PA VALIDATION',j.validation);
   sec('EXIF',j.exif); sec('IPTC',j.iptc); sec('TEXT / XMP',j.text);
   sec('FILE STRUCTURE',Object.entries(j.file.structure));
   lines.push('== WARNINGS / LIMITATIONS =='); if(!j.warnings.length)lines.push('(none)'); else j.warnings.forEach(w=>lines.push('- '+w)); lines.push('');
-  lines.push('Negative result note: absence of AI metadata/provenance does not prove human authorship.');
+  lines.push('Negative result note: absence of AI provenance, model signal, detectable watermark, or circumstantial fingerprint does not prove human authorship.');
   return lines.join('\n');
 }
+
+</script>
+
+<script type="module">
+"use strict";
+/* ============================================================
+   PROVENANCE V3.2 — Advanced Forensic Signals panel
+   Independent of the core analyzer above: this module owns its
+   own file-selection listeners and never writes into the C2PA/
+   neural/watermark verdict. Six modules run automatically with
+   no model download; five model-backed modules are opt-in and
+   only fetch weights when the user supplies a URL and clicks Run.
+   ============================================================ */
+import * as forensics from './forensics/index.js';
+
+const advPanel = document.getElementById('adv-panel');
+const advGrid = document.getElementById('adv-auto-grid');
+const advStatus = document.getElementById('adv-auto-status');
+let advCurrentFile = null;
+let advRun = 0;
+
+const AUTO_MODULES = [
+  { mod: forensics.spectralTail, label: 'Spectral Tail Uplift' },
+  { mod: forensics.cfaDemosaic, label: 'CFA / Demosaicing Consistency' },
+  { mod: forensics.lotaBitplane, label: 'LOTA Bit-Plane / Max-Gradient Patch' },
+  { mod: forensics.colorRestoration, label: 'Color Quantization / Restoration' },
+  { mod: forensics.jpegFingerprint, label: 'JPEG Encoder Fingerprint' },
+  { mod: forensics.generatorSpectrum, label: 'Generator Spectral Fingerprint' }
+];
+
+function advEsc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function advSafeJson(v) {
+  try {
+    return JSON.stringify(v, (k, val) => {
+      if (val instanceof Float32Array || val instanceof Float64Array || val instanceof Uint8ClampedArray) return `[${val.constructor.name} len=${val.length}]`;
+      if (typeof ImageData !== 'undefined' && val instanceof ImageData) return `[ImageData ${val.width}x${val.height}]`;
+      return val;
+    }, 2);
+  } catch (e) { return String(e); }
+}
+
+function advCardShell(id, label, family) {
+  return `<div class="adv-card" id="${id}"><h3><span>${advEsc(label)}</span><span class="adv-status pending">pending</span></h3><div class="adv-family">${advEsc(family||'')}</div><div class="adv-body"><div class="adv-summary">Waiting to run…</div></div></div>`;
+}
+
+function advRenderResult(cardId, result) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const statusEl = card.querySelector('.adv-status');
+  const body = card.querySelector('.adv-body');
+  const status = result.status === 'error' ? 'err' : result.status === 'not-applicable' ? 'na' : 'ok';
+  statusEl.className = 'adv-status ' + status;
+  statusEl.textContent = result.status === 'error' ? 'error' : result.status === 'not-applicable' ? 'n/a' : (result.calibrated ? 'calibrated' : 'ok · uncalibrated');
+  const scoreLine = result.score != null ? `<div class="adv-score">score (uncalibrated unless noted): ${(result.score*100).toFixed(1)}%</div>` : '';
+  const notes = (result.notes||[]).map(n => `<div>${advEsc(n)}</div>`).join('');
+  body.innerHTML = `
+    <div class="adv-summary">${advEsc(result.summary || result.error || '(no summary)')}</div>
+    ${scoreLine}
+    ${notes ? `<div class="adv-notes">${notes}</div>` : ''}
+    ${result.metrics ? `<details><summary>Metrics JSON</summary><pre>${advEsc(advSafeJson(result.metrics))}</pre></details>` : ''}
+  `;
+}
+
+async function runAutoModules(file) {
+  const run = ++advRun;
+  advPanel.classList.add('show');
+  advGrid.innerHTML = AUTO_MODULES.map(m => advCardShell('adv-' + m.mod.metadata.id, m.label, m.mod.metadata.family)).join('');
+  advStatus.textContent = 'Running six no-model modules…';
+  for (const { mod } of AUTO_MODULES) {
+    const cardId = 'adv-' + mod.metadata.id;
+    try {
+      const result = await mod.analyze(file);
+      if (run !== advRun) return;
+      advRenderResult(cardId, result);
+    } catch (e) {
+      if (run !== advRun) return;
+      advRenderResult(cardId, { status: 'error', error: String(e?.message || e) });
+    }
+  }
+  if (run === advRun) advStatus.textContent = 'Advanced signal extraction complete. Model-backed detectors below are opt-in.';
+  for (const btnId of ['np-run','dr-run','dp-run','ge-run','ep-run','prnu-run']) {
+    const b = document.getElementById(btnId); if (b) b.disabled = false;
+  }
+}
+
+// This panel owns independent file listeners so it never depends on the core
+// analyzer's internal state — matches the vendor package's "no shared verdict
+// engine" design.
+document.getElementById('file').addEventListener('change', () => {
+  const f = document.getElementById('file').files[0];
+  if (f) { advCurrentFile = f; runAutoModules(f); }
+});
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) { const f = item.getAsFile(); advCurrentFile = f; runAutoModules(f); }
+});
+document.getElementById('drop').addEventListener('drop', e => {
+  const f = e.dataTransfer.files?.[0];
+  if (f) { advCurrentFile = f; runAutoModules(f); }
+});
+
+/* ---------------- Model-backed detector wiring ---------------- */
+function advResultBox(id, html) { document.getElementById(id).innerHTML = html; }
+function advRunning(id) { advResultBox(id, '<span style="color:#555">Running — downloading model weights on first use…</span>'); }
+function advError(id, e) { advResultBox(id, `<span style="color:var(--bad)">Failed: ${advEsc(e?.message || e)}</span>`); }
+function advOk(id, result) {
+  const notes = (result.notes||[]).map(n=>`<div>${advEsc(n)}</div>`).join('');
+  const heatmap = result.artifacts?.heatmapImage ? renderHeatmapImg(result.artifacts.heatmapImage) : '';
+  advResultBox(id, `
+    <div>${advEsc(result.summary || '(no summary)')}</div>
+    ${result.score!=null?`<div class="adv-score">score: ${(result.score*100).toFixed(1)}%</div>`:''}
+    ${notes?`<div class="adv-notes">${notes}</div>`:''}
+    ${heatmap}
+    <details><summary>Metrics JSON</summary><pre>${advEsc(advSafeJson(result.metrics||{}))}</pre></details>
+  `);
+}
+function renderHeatmapImg(imageData) {
+  const c = document.createElement('canvas'); c.width = imageData.width; c.height = imageData.height;
+  c.getContext('2d').putImageData(imageData, 0, 0);
+  return `<img class="adv-heatmap" src="${c.toDataURL('image/png')}" alt="heatmap">`;
+}
+
+document.getElementById('np-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const residual = document.getElementById('np-residual-url').value.trim();
+  const feature = document.getElementById('np-feature-url').value.trim();
+  if (!residual || !feature) return advError('np-result', 'Both model URLs are required.');
+  advRunning('np-result');
+  try {
+    const result = await forensics.noiseprintCluster.analyze(advCurrentFile, { config: { noiseprintModelUrl: residual, featureModelUrl: feature } });
+    advOk('np-result', result);
+  } catch (e) { advError('np-result', e); }
+});
+
+document.getElementById('dr-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const modelUrl = document.getElementById('dr-model-url').value.trim();
+  if (!modelUrl) return advError('dr-result', 'Model URL is required.');
+  advRunning('dr-result');
+  try {
+    const reconstructor = forensics.diffusionReconstruction.createSingleOnnxReconstructor({ modelUrl });
+    const result = await forensics.diffusionReconstruction.analyze(advCurrentFile, { method: 'aeroblade', reconstructors: [reconstructor] });
+    advOk('dr-result', result);
+  } catch (e) { advError('dr-result', e); }
+});
+
+document.getElementById('dp-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const modelUrl = document.getElementById('dp-model-url').value.trim();
+  const outputMode = document.getElementById('dp-output-mode').value;
+  if (!modelUrl) return advError('dp-result', 'Model URL is required.');
+  advRunning('dp-result');
+  try {
+    const result = await forensics.diffusionprintLocalizer.analyze(advCurrentFile, { modelConfig: { modelUrl, outputMode } });
+    advOk('dp-result', result);
+  } catch (e) { advError('dp-result', e); }
+});
+
+document.getElementById('ge-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const modelUrl = document.getElementById('ge-model-url').value.trim();
+  if (!modelUrl) return advError('ge-result', 'Model URL is required.');
+  advRunning('ge-result');
+  try {
+    const embedder = await forensics.gaussianEmbedding.createOnnxEmbedder({ modelUrl });
+    const e = await embedder(advCurrentFile);
+    advResultBox('ge-result', `
+      <div>Raw embedding extracted (no reference distribution configured, so no posterior is computed).</div>
+      <div class="adv-score">dimension: ${e.embedding.length} · provider: ${advEsc(e.provider)}</div>
+      <details><summary>First 16 dimensions</summary><pre>${advEsc(JSON.stringify(e.embedding.slice(0,16), null, 2))}</pre></details>
+    `);
+  } catch (e) { advError('ge-result', e); }
+});
+
+document.getElementById('ep-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const modelUrl = document.getElementById('ep-model-url').value.trim();
+  if (!modelUrl) return advError('ep-result', 'Model URL is required.');
+  advRunning('ep-result');
+  try {
+    const result = await forensics.editprint.analyze(advCurrentFile, { embedderConfig: { modelUrl } });
+    advOk('ep-result', result);
+  } catch (e) { advError('ep-result', e); }
+});
+
+document.getElementById('prnu-refs').addEventListener('change', () => {
+  document.getElementById('prnu-run').disabled = !(advCurrentFile && document.getElementById('prnu-refs').files.length);
+});
+
+document.getElementById('prnu-run').addEventListener('click', async () => {
+  if (!advCurrentFile) return;
+  const refFiles = [...document.getElementById('prnu-refs').files];
+  if (!refFiles.length) return advError('prnu-result', 'Add at least one (ideally 10+) reference photo from the same camera.');
+  advRunning('prnu-result');
+  try {
+    const fingerprint = await forensics.prnu.estimateFingerprint(refFiles);
+    const result = await forensics.prnu.analyze(advCurrentFile, { fingerprint });
+    advOk('prnu-result', result);
+  } catch (e) { advError('prnu-result', e); }
+});
 </script>
 </body>
 </html>
