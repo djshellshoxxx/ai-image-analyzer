@@ -810,7 +810,1334 @@ function parseIPTCIIM(bytes,f,source='JPEG APP13 IPTC'){
     inspectMetadataText(name,value,f,source);
   }
 }
+/*
+ * PROVENANCE Audio Forensics Module
+ * Browser-only ES module for AI/synthetic-audio forensic analysis.
+ *
+ * Features:
+ *   - Upload/drag-drop audio analysis
+ *   - Live microphone PCM capture + rolling analysis
+ *   - Container/metadata inspection (WAV/BWF/AIFF/FLAC/Ogg/Opus/MP3/MP4/WebM)
+ *   - Optional C2PA validation
+ *   - Signal-domain forensic measurements
+ *   - Lightweight AASIST-L ONNX anti-spoofing model (speech)
+ *   - Pluggable watermark / custom detector hooks
+ *
+ * No audio is uploaded by this module. External code/model files may be downloaded
+ * into the browser when C2PA or neural analysis is enabled.
+ */
 
+export const metadata = Object.freeze({
+  id: 'audio-forensics',
+  name: 'Audio / Voice Forensics',
+  version: '1.0.0',
+  evidence: 'mixed',
+  calibrated: false,
+  description: 'Client-side synthetic-speech/audio forensic analysis with file upload and live microphone capture.'
+});
+
+const TARGET_SR = 16000;
+const AASIST_SAMPLES = 64600;
+const ORT_VERSION = '1.27.0';
+const ORT_SCRIPT = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort.min.js`;
+const ORT_WASM_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+const DEFAULT_AASIST_MODEL = 'https://huggingface.co/SpeechAntiSpoofingBenchmarks/AASIST-L/resolve/main/aasist-l.onnx';
+const C2PA_VERSION = '0.14.3';
+const C2PA_MODULE = `https://esm.sh/@contentauth/c2pa-web@${C2PA_VERSION}`;
+const C2PA_WASM = `https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@${C2PA_VERSION}/dist/resources/c2pa_bg.wasm`;
+const MAX_TEXT_SCAN = 2 * 1024 * 1024;
+const MAX_SIGNAL_SECONDS = 180;
+const MAX_FRAMES = 900;
+const MAX_NEURAL_WINDOWS = 32;
+
+const AI_VENDOR_PATTERNS = [
+  [/\belevenlabs\b/i, 'ElevenLabs'],
+  [/\bdescript\b|overdub/i, 'Descript / Overdub'],
+  [/\bplay\.?ht\b/i, 'PlayHT'],
+  [/\bspeechify\b/i, 'Speechify'],
+  [/\bresemble(?:\.ai)?\b/i, 'Resemble AI'],
+  [/\bmurf(?:\.ai)?\b/i, 'Murf AI'],
+  [/\bsynthesia\b/i, 'Synthesia'],
+  [/\bamazon\s+polly\b|\bpolly\b/i, 'Amazon Polly'],
+  [/\bazure\b.*\b(?:speech|neural)\b|\bmicrosoft\b.*\btts\b/i, 'Microsoft / Azure Speech'],
+  [/\bgoogle\b.*\b(?:text.?to.?speech|tts|speech)\b/i, 'Google TTS'],
+  [/\bopenai\b|\bgpt-4o\b|\btts-1(?:-hd)?\b/i, 'OpenAI audio/TTS'],
+  [/\bcoqui\b|\bxtts\b/i, 'Coqui / XTTS'],
+  [/\bbark\b.*\b(?:tts|audio|voice)\b/i, 'Bark'],
+  [/\bkokoro\b/i, 'Kokoro TTS'],
+  [/\bfish[- ]?speech\b/i, 'Fish Speech'],
+  [/\brvc\b|retrieval.?based voice conversion/i, 'RVC'],
+  [/\bso[-_ ]?vits[-_ ]?svc\b/i, 'so-vits-svc'],
+  [/\bvoice\.ai\b/i, 'Voice.ai'],
+  [/\bsuno\b/i, 'Suno'],
+  [/\budio\b/i, 'Udio'],
+  [/\bmusicgen\b/i, 'Meta MusicGen'],
+  [/\bstable audio\b/i, 'Stable Audio'],
+  [/\baudioldm\b/i, 'AudioLDM'],
+  [/\baudioseal\b/i, 'Meta AudioSeal'],
+  [/\bsynthid\b/i, 'SynthID']
+];
+
+const DEFAULT_OPTIONS = Object.freeze({
+  c2pa: { enabled: true },
+  neural: {
+    enabled: true,
+    modelUrl: DEFAULT_AASIST_MODEL,
+    executionProviders: ['webgpu', 'wasm'],
+    maxWindows: MAX_NEURAL_WINDOWS,
+    hopSamples: 32300,
+    liveMaxWindows: 3
+  },
+  signal: { enabled: true, maxSeconds: MAX_SIGNAL_SECONDS },
+  watermarkDetectors: [],
+  customDetectors: [],
+  microphone: {
+    rollingSeconds: 12,
+    analysisIntervalMs: 2000,
+    audioConstraints: {
+      channelCount: 1,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    }
+  }
+});
+
+let ortPromise = null;
+let c2paPromise = null;
+const sessionCache = new Map();
+let styleInjected = false;
+
+function mergeOptions(options = {}) {
+  return {
+    ...DEFAULT_OPTIONS,
+    ...options,
+    c2pa: { ...DEFAULT_OPTIONS.c2pa, ...(options.c2pa || {}) },
+    neural: { ...DEFAULT_OPTIONS.neural, ...(options.neural || {}) },
+    signal: { ...DEFAULT_OPTIONS.signal, ...(options.signal || {}) },
+    microphone: {
+      ...DEFAULT_OPTIONS.microphone,
+      ...(options.microphone || {}),
+      audioConstraints: {
+        ...DEFAULT_OPTIONS.microphone.audioConstraints,
+        ...(options.microphone?.audioConstraints || {})
+      }
+    },
+    watermarkDetectors: options.watermarkDetectors || DEFAULT_OPTIONS.watermarkDetectors,
+    customDetectors: options.customDetectors || DEFAULT_OPTIONS.customDetectors
+  };
+}
+
+function finite(v, fallback = null) { return Number.isFinite(v) ? v : fallback; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function mean(a) { return a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0; }
+function stddev(a) {
+  if (!a.length) return 0;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length);
+}
+function median(a) {
+  if (!a.length) return 0;
+  const b = [...a].sort((x, y) => x - y);
+  const i = Math.floor(b.length / 2);
+  return b.length % 2 ? b[i] : (b[i - 1] + b[i]) / 2;
+}
+function percentile(a, p) {
+  if (!a.length) return 0;
+  const b = [...a].sort((x, y) => x - y);
+  const x = clamp(p, 0, 1) * (b.length - 1);
+  const i = Math.floor(x), f = x - i;
+  return b[i] * (1 - f) + (b[Math.min(i + 1, b.length - 1)] || b[i]) * f;
+}
+function db(v, floor = -120) { return v > 0 ? 20 * Math.log10(v) : floor; }
+function softmax2(a, b) {
+  const m = Math.max(a, b);
+  const ea = Math.exp(a - m), eb = Math.exp(b - m), d = ea + eb;
+  return [ea / d, eb / d];
+}
+function fmt(n, d = 3) { return Number.isFinite(n) ? Number(n.toFixed(d)) : null; }
+function secondsLabel(sec) {
+  if (!Number.isFinite(sec)) return '?';
+  const m = Math.floor(sec / 60), s = sec - m * 60;
+  return m ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${s.toFixed(1)}s`;
+}
+function ascii(bytes, start = 0, len = bytes.length - start) {
+  let s = '';
+  const end = Math.min(bytes.length, start + len);
+  for (let i = start; i < end; i++) {
+    const c = bytes[i];
+    s += c >= 32 && c <= 126 ? String.fromCharCode(c) : '\0';
+  }
+  return s;
+}
+function decodeText(bytes, encoding = 'utf-8') {
+  try { return new TextDecoder(encoding, { fatal: false }).decode(bytes).replace(/\0+$/g, ''); }
+  catch { return ascii(bytes).replace(/\0+$/g, ''); }
+}
+function readU24BE(b, o) { return ((b[o] << 16) | (b[o + 1] << 8) | b[o + 2]) >>> 0; }
+function readU32BE(b, o) { return ((b[o] * 0x1000000) + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3]) >>> 0; }
+function readU32LE(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] * 0x1000000)) >>> 0; }
+function syncSafe(b, o) { return ((b[o] & 0x7f) << 21) | ((b[o + 1] & 0x7f) << 14) | ((b[o + 2] & 0x7f) << 7) | (b[o + 3] & 0x7f); }
+function uniquePush(arr, item, keyFn = x => JSON.stringify(x)) {
+  const k = keyFn(item);
+  if (!arr.some(x => keyFn(x) === k)) arr.push(item);
+}
+
+export function identifyAudioFormat(bytes, mime = '', name = '') {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+  const ext = String(name).split('.').pop()?.toLowerCase() || '';
+  if (b.length >= 12 && ascii(b, 0, 4) === 'RIFF' && ascii(b, 8, 4) === 'WAVE') return { id: 'wav', name: 'WAV/RIFF', mime: 'audio/wav' };
+  if (b.length >= 12 && ascii(b, 0, 4) === 'FORM' && /AIFF|AIFC/.test(ascii(b, 8, 4))) return { id: 'aiff', name: 'AIFF/AIFC', mime: 'audio/aiff' };
+  if (b.length >= 4 && ascii(b, 0, 4) === 'fLaC') return { id: 'flac', name: 'FLAC', mime: 'audio/flac' };
+  if (b.length >= 4 && ascii(b, 0, 4) === 'OggS') return { id: 'ogg', name: 'Ogg', mime: /opus/i.test(mime) || ext === 'opus' ? 'audio/opus' : 'audio/ogg' };
+  if (b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { id: 'webm', name: 'WebM/Matroska', mime: 'audio/webm' };
+  if (b.length >= 12 && ascii(b, 4, 4) === 'ftyp') return { id: 'mp4', name: 'ISO BMFF / MP4 audio', mime: mime || 'audio/mp4' };
+  if (b.length >= 3 && ascii(b, 0, 3) === 'ID3') return { id: 'mp3', name: 'MP3 / ID3', mime: 'audio/mpeg' };
+  if (b.length >= 2 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return { id: 'mp3', name: 'MP3', mime: 'audio/mpeg' };
+  if (/wav/i.test(mime) || ext === 'wav') return { id: 'wav', name: 'WAV (by MIME/name)', mime: mime || 'audio/wav' };
+  if (/mpeg|mp3/i.test(mime) || ext === 'mp3') return { id: 'mp3', name: 'MP3 (by MIME/name)', mime: mime || 'audio/mpeg' };
+  if (/flac/i.test(mime) || ext === 'flac') return { id: 'flac', name: 'FLAC (by MIME/name)', mime: mime || 'audio/flac' };
+  if (/ogg|opus/i.test(mime) || ['ogg', 'opus'].includes(ext)) return { id: 'ogg', name: 'Ogg/Opus (by MIME/name)', mime: mime || 'audio/ogg' };
+  if (/webm/i.test(mime) || ext === 'webm') return { id: 'webm', name: 'WebM (by MIME/name)', mime: mime || 'audio/webm' };
+  if (/mp4|m4a|aac|alac/i.test(mime) || ['m4a', 'mp4', 'aac'].includes(ext)) return { id: 'mp4', name: 'MP4/M4A/AAC (by MIME/name)', mime: mime || 'audio/mp4' };
+  return { id: 'unknown', name: 'Unknown audio container', mime: mime || 'application/octet-stream' };
+}
+
+function parseId3TextPayload(payload) {
+  if (!payload.length) return '';
+  const enc = payload[0];
+  const body = payload.subarray(1);
+  if (enc === 0) return decodeText(body, 'latin1');
+  if (enc === 3) return decodeText(body, 'utf-8');
+  if (enc === 1 || enc === 2) {
+    let le = true, start = 0;
+    if (body.length >= 2 && body[0] === 0xfe && body[1] === 0xff) { le = false; start = 2; }
+    else if (body.length >= 2 && body[0] === 0xff && body[1] === 0xfe) { le = true; start = 2; }
+    try { return new TextDecoder(le ? 'utf-16le' : 'utf-16be').decode(body.subarray(start)).replace(/\0+$/g, ''); }
+    catch { return decodeText(body.subarray(start)); }
+  }
+  return decodeText(body);
+}
+
+function parseId3(bytes, metadataRows, warnings) {
+  if (bytes.length < 10 || ascii(bytes, 0, 3) !== 'ID3') return;
+  const ver = bytes[3], flags = bytes[5], size = syncSafe(bytes, 6);
+  metadataRows.push(['ID3 version', `2.${ver}.${bytes[4]}`]);
+  metadataRows.push(['ID3 tag bytes', String(Math.min(bytes.length, 10 + size))]);
+  let p = 10;
+  if (flags & 0x40) {
+    if (ver === 3 && p + 4 <= bytes.length) p += 4 + readU32BE(bytes, p);
+    else if (ver === 4 && p + 4 <= bytes.length) p += syncSafe(bytes, p);
+  }
+  const end = Math.min(bytes.length, 10 + size);
+  while (p + 10 <= end) {
+    const id = ascii(bytes, p, 4).replace(/\0/g, '');
+    if (!/^[A-Z0-9]{4}$/.test(id)) break;
+    const len = ver === 4 ? syncSafe(bytes, p + 4) : readU32BE(bytes, p + 4);
+    if (!len || p + 10 + len > end) { warnings.push(`ID3 frame ${id} is truncated or has an invalid length.`); break; }
+    const payload = bytes.subarray(p + 10, p + 10 + len);
+    if (id[0] === 'T' || id === 'COMM') {
+      let value;
+      if (id === 'COMM' && payload.length > 4) {
+        const commentPayload = new Uint8Array(1 + payload.length - 4);
+        commentPayload[0] = payload[0];
+        commentPayload.set(payload.subarray(4), 1);
+        value = parseId3TextPayload(commentPayload);
+      } else value = parseId3TextPayload(payload);
+      if (value) metadataRows.push([`ID3 ${id}`, value.slice(0, 2000)]);
+    }
+    p += 10 + len;
+  }
+}
+
+function parseRiff(bytes, containerRows, metadataRows, warnings) {
+  if (bytes.length < 12) return;
+  containerRows.push(['RIFF type', ascii(bytes, 8, 4).replace(/\0/g, '') || '(unknown)']);
+  let p = 12;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  while (p + 8 <= bytes.length) {
+    const id = ascii(bytes, p, 4).replace(/\0/g, '');
+    const size = dv.getUint32(p + 4, true);
+    const dataStart = p + 8, dataEnd = Math.min(bytes.length, dataStart + size);
+    containerRows.push(['RIFF chunk', `${id || '(binary)'} · ${size} bytes`]);
+    if (dataStart + size > bytes.length) { warnings.push(`RIFF chunk ${id} extends beyond end of file.`); break; }
+    const data = bytes.subarray(dataStart, dataEnd);
+    if (id === 'fmt ' && data.length >= 16) {
+      const fdv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      metadataRows.push(['WAV format code', String(fdv.getUint16(0, true))]);
+      metadataRows.push(['Channels', String(fdv.getUint16(2, true))]);
+      metadataRows.push(['Sample rate', String(fdv.getUint32(4, true))]);
+      metadataRows.push(['Byte rate', String(fdv.getUint32(8, true))]);
+      metadataRows.push(['Bits/sample', String(fdv.getUint16(14, true))]);
+    } else if (id === 'bext') {
+      const desc = decodeText(data.subarray(0, 256), 'latin1').replace(/\0.*$/s, '').trim();
+      const originator = decodeText(data.subarray(256, 288), 'latin1').replace(/\0.*$/s, '').trim();
+      const originatorRef = decodeText(data.subarray(288, 320), 'latin1').replace(/\0.*$/s, '').trim();
+      const date = decodeText(data.subarray(320, 330), 'latin1').replace(/\0.*$/s, '').trim();
+      const time = decodeText(data.subarray(330, 338), 'latin1').replace(/\0.*$/s, '').trim();
+      if (desc) metadataRows.push(['BWF description', desc]);
+      if (originator) metadataRows.push(['BWF originator', originator]);
+      if (originatorRef) metadataRows.push(['BWF originator reference', originatorRef]);
+      if (date || time) metadataRows.push(['BWF origination date/time', `${date} ${time}`.trim()]);
+    } else if (['iXML', 'axml', 'XMP ', 'CSET'].includes(id)) {
+      const text = decodeText(data).replace(/\0+$/g, '').trim();
+      if (text) metadataRows.push([`RIFF ${id.trim()}`, text.slice(0, 5000)]);
+    } else if (id === 'LIST' && data.length >= 4 && ascii(data, 0, 4) === 'INFO') {
+      let q = 4;
+      while (q + 8 <= data.length) {
+        const sid = ascii(data, q, 4).replace(/\0/g, '');
+        const slen = readU32LE(data, q + 4);
+        const s0 = q + 8, s1 = Math.min(data.length, s0 + slen);
+        if (s0 + slen > data.length) break;
+        const val = decodeText(data.subarray(s0, s1), 'latin1').replace(/\0+$/g, '').trim();
+        if (val) metadataRows.push([`RIFF INFO ${sid}`, val]);
+        q = s0 + slen + (slen & 1);
+      }
+    } else if (/^id3\s?$/i.test(id)) {
+      parseId3(data, metadataRows, warnings);
+    }
+    p = dataEnd + (size & 1);
+  }
+}
+
+function parseFlac(bytes, containerRows, metadataRows, warnings) {
+  if (bytes.length < 4 || ascii(bytes, 0, 4) !== 'fLaC') return;
+  let p = 4, done = false;
+  while (!done && p + 4 <= bytes.length) {
+    const h = bytes[p], type = h & 0x7f;
+    done = !!(h & 0x80);
+    const len = readU24BE(bytes, p + 1);
+    const s = p + 4, e = s + len;
+    if (e > bytes.length) { warnings.push('FLAC metadata block extends beyond end of file.'); break; }
+    const data = bytes.subarray(s, e);
+    containerRows.push(['FLAC metadata block', `type ${type} · ${len} bytes`]);
+    if (type === 0 && len >= 34) {
+      const packed = (BigInt(data[10]) << 56n) | (BigInt(data[11]) << 48n) | (BigInt(data[12]) << 40n) | (BigInt(data[13]) << 32n) |
+        (BigInt(data[14]) << 24n) | (BigInt(data[15]) << 16n) | (BigInt(data[16]) << 8n) | BigInt(data[17]);
+      const sr = Number((packed >> 44n) & 0xfffffn);
+      const channels = Number((packed >> 41n) & 0x7n) + 1;
+      const bits = Number((packed >> 36n) & 0x1fn) + 1;
+      metadataRows.push(['FLAC sample rate', String(sr)]);
+      metadataRows.push(['FLAC channels', String(channels)]);
+      metadataRows.push(['FLAC bits/sample', String(bits)]);
+    } else if (type === 4 && len >= 8) {
+      const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      let q = 0;
+      const vendorLen = dv.getUint32(q, true); q += 4;
+      if (q + vendorLen <= data.length) {
+        const vendor = decodeText(data.subarray(q, q + vendorLen)); q += vendorLen;
+        if (vendor) metadataRows.push(['FLAC Vorbis vendor', vendor]);
+      }
+      if (q + 4 <= data.length) {
+        const count = dv.getUint32(q, true); q += 4;
+        for (let i = 0; i < Math.min(count, 100) && q + 4 <= data.length; i++) {
+          const l = dv.getUint32(q, true); q += 4;
+          if (q + l > data.length) break;
+          const text = decodeText(data.subarray(q, q + l)); q += l;
+          if (text) metadataRows.push(['FLAC comment', text.slice(0, 2000)]);
+        }
+      }
+    }
+    p = e;
+  }
+}
+
+function parseOggComments(bytes, metadataRows) {
+  const scan = bytes.subarray(0, Math.min(bytes.length, MAX_TEXT_SCAN));
+  const text = decodeText(scan, 'latin1');
+  const candidates = [];
+  for (const marker of ['OpusTags', 'vorbis']) {
+    const idx = text.indexOf(marker);
+    if (idx >= 0) candidates.push(idx);
+  }
+  for (const idx of candidates.slice(0, 3)) {
+    const around = text.slice(Math.max(0, idx - 32), Math.min(text.length, idx + 8192));
+    const printable = around.replace(/[^\x20-\x7e\r\n\t]+/g, '\n');
+    for (const line of printable.split(/[\r\n]+/)) {
+      const v = line.trim();
+      if (/^[A-Z0-9_.-]{2,40}=.{1,1000}$/i.test(v)) metadataRows.push(['Ogg/Opus comment', v]);
+    }
+  }
+}
+
+function walkMp4Boxes(bytes, start, end, depth, containerRows, metadataRows, warnings) {
+  if (depth > 8) return;
+  let p = start;
+  const parentTypes = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'ilst', 'meta']);
+  while (p + 8 <= end && p + 8 <= bytes.length) {
+    let size = readU32BE(bytes, p);
+    const type = ascii(bytes, p + 4, 4).replace(/\0/g, '');
+    let header = 8;
+    if (size === 1 && p + 16 <= bytes.length) {
+      const hi = readU32BE(bytes, p + 8), lo = readU32BE(bytes, p + 12);
+      const big = hi * 2 ** 32 + lo;
+      if (!Number.isSafeInteger(big)) { warnings.push(`MP4 box ${type} has an unsupported >53-bit size.`); break; }
+      size = big; header = 16;
+    } else if (size === 0) size = end - p;
+    if (size < header || p + size > end || p + size > bytes.length) { warnings.push(`MP4 box ${type} has an invalid size.`); break; }
+    containerRows.push(['MP4 box', `${'  '.repeat(depth)}${type} · ${size} bytes`]);
+    const dataStart = p + header;
+    if (type === 'ftyp' && size >= header + 8) {
+      metadataRows.push(['MP4 major brand', ascii(bytes, dataStart, 4).replace(/\0/g, '')]);
+      metadataRows.push(['MP4 minor version', String(readU32BE(bytes, dataStart + 4))]);
+      const brands = [];
+      for (let q = dataStart + 8; q + 4 <= p + size; q += 4) brands.push(ascii(bytes, q, 4).replace(/\0/g, ''));
+      if (brands.length) metadataRows.push(['MP4 compatible brands', brands.join(', ')]);
+    }
+    if (parentTypes.has(type)) {
+      let childStart = dataStart;
+      if (type === 'meta' && childStart + 4 <= p + size) childStart += 4;
+      walkMp4Boxes(bytes, childStart, p + size, depth + 1, containerRows, metadataRows, warnings);
+    }
+    p += size;
+  }
+}
+
+function scanTextFingerprints(bytes, metadataRows) {
+  const n = Math.min(bytes.length, MAX_TEXT_SCAN);
+  const head = decodeText(bytes.subarray(0, n), 'latin1');
+  const tail = bytes.length > n ? decodeText(bytes.subarray(Math.max(0, bytes.length - Math.min(512 * 1024, bytes.length))), 'latin1') : '';
+  const text = `${head}\n${tail}`;
+  const out = [];
+  for (const [re, vendor] of AI_VENDOR_PATTERNS) {
+    const m = text.match(re);
+    if (m) uniquePush(out, { vendor, match: m[0], source: 'raw/container text scan', strength: 'supporting' }, x => x.vendor);
+  }
+  const encoders = [...text.matchAll(/(?:encoder|encoded[_ -]?by|software|creation[_ -]?tool|writing[_ -]?app)[^\x00-\x1f]{0,120}/ig)].slice(0, 12);
+  for (const m of encoders) metadataRows.push(['Raw encoder/software string', m[0].slice(0, 180)]);
+  return out;
+}
+
+export function inspectAudioContainer(input, info = {}) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input || 0);
+  const format = identifyAudioFormat(bytes, info.mime || '', info.name || '');
+  const containerRows = [['Detected format', format.name], ['File bytes', String(bytes.length)]];
+  const metadataRows = [];
+  const warnings = [];
+  if (format.id === 'wav') parseRiff(bytes, containerRows, metadataRows, warnings);
+  else if (format.id === 'mp3') parseId3(bytes, metadataRows, warnings);
+  else if (format.id === 'flac') parseFlac(bytes, containerRows, metadataRows, warnings);
+  else if (format.id === 'ogg') parseOggComments(bytes, metadataRows);
+  else if (format.id === 'mp4') walkMp4Boxes(bytes, 0, bytes.length, 0, containerRows, metadataRows, warnings);
+  const vendorFingerprints = scanTextFingerprints(bytes, metadataRows);
+  const rowValue = (...labels) => {
+    for (const label of labels) {
+      const row = metadataRows.find(([k]) => k === label);
+      if (row) return row[1];
+    }
+    return null;
+  };
+  const toFinite = v => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const audio = {
+    sampleRate: toFinite(rowValue('Sample rate', 'FLAC sample rate')),
+    channels: toFinite(rowValue('Channels', 'FLAC channels')),
+    bitsPerSample: toFinite(rowValue('Bits/sample', 'FLAC bits/sample')),
+    formatCode: toFinite(rowValue('WAV format code'))
+  };
+  return { format, audio, containerRows, metadataRows, vendorFingerprints, warnings };
+}
+
+export function resampleLinear(input, sourceRate, targetRate = TARGET_SR) {
+  const x = input instanceof Float32Array ? input : Float32Array.from(input || []);
+  if (!x.length || !sourceRate || !targetRate) return new Float32Array();
+  if (sourceRate === targetRate) return x.slice();
+  const outLen = Math.max(1, Math.round(x.length * targetRate / sourceRate));
+  const y = new Float32Array(outLen);
+  const scale = sourceRate / targetRate;
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * scale;
+    const j = Math.floor(pos), f = pos - j;
+    const a = x[Math.min(j, x.length - 1)], b = x[Math.min(j + 1, x.length - 1)];
+    y[i] = a + (b - a) * f;
+  }
+  return y;
+}
+
+function mixChannels(audioBuffer) {
+  const n = audioBuffer.length;
+  const ch = audioBuffer.numberOfChannels;
+  const out = new Float32Array(n);
+  for (let c = 0; c < ch; c++) {
+    const d = audioBuffer.getChannelData(c);
+    for (let i = 0; i < n; i++) out[i] += d[i] / ch;
+  }
+  return out;
+}
+
+async function decodeAudioBlob(blob) {
+  const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (!AudioCtx) throw new Error('Web Audio API is unavailable in this browser.');
+  const ctx = new AudioCtx();
+  try {
+    const ab = await blob.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(ab.slice(0));
+    return { pcm: mixChannels(decoded), sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels, duration: decoded.duration };
+  } finally {
+    try { await ctx.close(); } catch {}
+  }
+}
+
+function bitReversePermutation(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+}
+
+function fftPower(frame) {
+  const n = frame.length;
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) re[i] = frame[i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+  bitReversePermutation(re, im);
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wr0 = Math.cos(ang), wi0 = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let wr = 1, wi = 0;
+      for (let j = 0; j < len / 2; j++) {
+        const uR = re[i + j], uI = im[i + j];
+        const k = i + j + len / 2;
+        const vR = re[k] * wr - im[k] * wi;
+        const vI = re[k] * wi + im[k] * wr;
+        re[i + j] = uR + vR; im[i + j] = uI + vI;
+        re[k] = uR - vR; im[k] = uI - vI;
+        const nwr = wr * wr0 - wi * wi0;
+        wi = wr * wi0 + wi * wr0; wr = nwr;
+      }
+    }
+  }
+  const p = new Float64Array(n / 2 + 1);
+  for (let k = 0; k < p.length; k++) p[k] = re[k] ** 2 + im[k] ** 2 + 1e-18;
+  return p;
+}
+
+function spectralFeatures(power, sr, fftSize, previousNorm = null) {
+  let total = 0, weighted = 0, logSum = 0, hf = 0, entropy = 0;
+  const norm = new Float64Array(power.length);
+  for (let k = 1; k < power.length; k++) {
+    const v = power[k]; total += v; weighted += v * (k * sr / fftSize); logSum += Math.log(v);
+  }
+  if (total <= 0) return { centroid: 0, flatness: 0, rolloff: 0, hfRatio: 0, entropy: 0, flux: 0, norm };
+  let cum = 0, rolloff = 0;
+  for (let k = 1; k < power.length; k++) {
+    norm[k] = power[k] / total;
+    const f = k * sr / fftSize;
+    if (f >= 7000) hf += power[k];
+    if (!rolloff) { cum += power[k]; if (cum >= total * 0.85) rolloff = f; }
+    const q = norm[k]; if (q > 0) entropy -= q * Math.log(q);
+  }
+  const bins = Math.max(1, power.length - 1);
+  const flatness = Math.exp(logSum / bins) / (total / bins);
+  entropy /= Math.log(bins);
+  let flux = 0;
+  if (previousNorm) {
+    for (let k = 1; k < norm.length; k++) { const d = norm[k] - previousNorm[k]; if (d > 0) flux += d * d; }
+    flux = Math.sqrt(flux);
+  }
+  return { centroid: weighted / total, flatness, rolloff, hfRatio: hf / total, entropy, flux, norm };
+}
+
+function estimatePitch(frame, sr) {
+  let rms2 = 0, crossings = 0;
+  for (let i = 0; i < frame.length; i++) {
+    rms2 += frame[i] ** 2;
+    if (i && (frame[i] >= 0) !== (frame[i - 1] >= 0)) crossings++;
+  }
+  const rms = Math.sqrt(rms2 / frame.length);
+  if (rms < 0.004) return { f0: null, periodicity: 0, rms, zcr: crossings / frame.length };
+  const minLag = Math.max(2, Math.floor(sr / 500));
+  const maxLag = Math.min(frame.length - 2, Math.floor(sr / 55));
+  let zero = 0;
+  for (const v of frame) zero += v * v;
+  let bestLag = 0, best = -Infinity;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let s = 0, d = 0;
+    for (let i = 0; i < frame.length - lag; i++) { s += frame[i] * frame[i + lag]; d += frame[i] ** 2; }
+    const c = s / Math.sqrt(Math.max(1e-18, d * zero));
+    if (c > best) { best = c; bestLag = lag; }
+  }
+  const voiced = best > 0.35;
+  return { f0: voiced ? sr / bestLag : null, periodicity: Math.max(0, best), rms, zcr: crossings / frame.length };
+}
+
+function frameStartPositions(length, frameSize, hop, maxFrames) {
+  const total = Math.max(0, Math.floor((length - frameSize) / hop) + 1);
+  if (total <= maxFrames) return Array.from({ length: total }, (_, i) => i * hop);
+  const out = [];
+  for (let i = 0; i < maxFrames; i++) out.push(Math.round((i * (total - 1) / (maxFrames - 1)) * hop));
+  return out;
+}
+
+function spectralSlope(meanPower, sr, fftSize) {
+  let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
+  for (let k = 2; k < meanPower.length; k++) {
+    const f = k * sr / fftSize;
+    if (f < 100 || f > 7500) continue;
+    const x = Math.log10(f), y = Math.log10(meanPower[k] + 1e-18);
+    sx += x; sy += y; sxx += x * x; sxy += x * y; n++;
+  }
+  const den = n * sxx - sx * sx;
+  return den ? (n * sxy - sx * sy) / den : 0;
+}
+
+function deriveSignalFindings(m) {
+  const findings = [];
+  if (m.voicedFrames >= 12 && m.pitchCv != null && m.pitchCv < 0.025) findings.push({ type: 'LOW_PITCH_VARIATION', strength: 'supporting', label: 'Very stable fundamental frequency', detail: `Pitch coefficient of variation ${fmt(m.pitchCv * 100, 2)}%. This can occur in synthetic speech but is not unique to it.` });
+  if (m.voicedFrames >= 12 && m.jitterPct != null && m.jitterPct < 0.35) findings.push({ type: 'LOW_JITTER', strength: 'supporting', label: 'Low cycle-to-cycle pitch variation proxy', detail: `Frame-derived jitter proxy ${fmt(m.jitterPct, 2)}%.` });
+  if (m.voicedFrames >= 12 && m.shimmerPct != null && m.shimmerPct < 0.8) findings.push({ type: 'LOW_SHIMMER', strength: 'supporting', label: 'Low amplitude variation proxy', detail: `Frame-derived shimmer proxy ${fmt(m.shimmerPct, 2)}%.` });
+  if (m.spectralFluxMean != null && m.spectralFluxMean < 0.025 && m.voicedRatio > 0.2) findings.push({ type: 'LOW_SPECTRAL_FLUX', strength: 'supporting', label: 'Unusually smooth short-term spectrum', detail: `Mean positive spectral flux ${fmt(m.spectralFluxMean, 4)}.` });
+  if (m.clipRatio > 0.01) findings.push({ type: 'CLIPPING', strength: 'diagnostic', label: 'Clipping detected', detail: `${fmt(m.clipRatio * 100, 2)}% of samples are at or near full scale; clipping can distort deepfake detectors.` });
+  if (Math.abs(m.dcOffset) > 0.02) findings.push({ type: 'DC_OFFSET', strength: 'diagnostic', label: 'DC offset detected', detail: `Mean sample value ${fmt(m.dcOffset, 4)}.` });
+  return findings;
+}
+
+export function analyzeSignalPcm(pcmInput, sampleRate, options = {}) {
+  const src = pcmInput instanceof Float32Array ? pcmInput : Float32Array.from(pcmInput || []);
+  if (!src.length || !sampleRate) return { status: 'unavailable', error: 'No PCM samples available.' };
+  const maxSeconds = options.maxSeconds || MAX_SIGNAL_SECONDS;
+  const maxSrc = Math.min(src.length, Math.round(sampleRate * maxSeconds));
+  const srcSlice = src.subarray(0, maxSrc);
+  const pcm = sampleRate === TARGET_SR ? srcSlice.slice() : resampleLinear(srcSlice, sampleRate, TARGET_SR);
+  let sum = 0, sum2 = 0, peak = 0, clipped = 0, crossings = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    const v = pcm[i]; sum += v; sum2 += v * v; peak = Math.max(peak, Math.abs(v)); if (Math.abs(v) >= 0.999) clipped++;
+    if (i && (v >= 0) !== (pcm[i - 1] >= 0)) crossings++;
+  }
+  const dcOffset = sum / pcm.length;
+  const rms = Math.sqrt(sum2 / pcm.length);
+  const fftSize = 1024, hop = 512;
+  const starts = frameStartPositions(pcm.length, fftSize, hop, MAX_FRAMES);
+  const rmsFrames = [], zcrFrames = [], centroids = [], flatness = [], rolloffs = [], hfRatios = [], entropies = [], fluxes = [], f0s = [], periodicities = [];
+  let prevNorm = null;
+  const powerMean = new Float64Array(fftSize / 2 + 1);
+  for (const start of starts) {
+    const frame = pcm.subarray(start, start + fftSize);
+    const pitch = estimatePitch(frame, TARGET_SR);
+    rmsFrames.push(pitch.rms); zcrFrames.push(pitch.zcr); periodicities.push(pitch.periodicity);
+    if (pitch.f0) f0s.push(pitch.f0);
+    const power = fftPower(frame);
+    for (let k = 0; k < power.length; k++) powerMean[k] += power[k];
+    const sf = spectralFeatures(power, TARGET_SR, fftSize, prevNorm);
+    prevNorm = sf.norm;
+    centroids.push(sf.centroid); flatness.push(sf.flatness); rolloffs.push(sf.rolloff); hfRatios.push(sf.hfRatio); entropies.push(sf.entropy); if (sf.flux) fluxes.push(sf.flux);
+  }
+  if (starts.length) for (let k = 0; k < powerMean.length; k++) powerMean[k] /= starts.length;
+  const p95 = percentile(rmsFrames, .95), p10 = percentile(rmsFrames, .10);
+  const silenceThreshold = Math.max(0.0015, p95 * 0.035);
+  const silenceRatio = rmsFrames.length ? rmsFrames.filter(v => v < silenceThreshold).length / rmsFrames.length : 0;
+  const activeRms = rmsFrames.filter(v => v >= silenceThreshold);
+  const pitchMean = f0s.length ? mean(f0s) : null;
+  const pitchStd = f0s.length ? stddev(f0s) : null;
+  const jitterPairs = [];
+  for (let i = 1; i < f0s.length; i++) jitterPairs.push(Math.abs(f0s[i] - f0s[i - 1]) / Math.max(1e-9, (f0s[i] + f0s[i - 1]) / 2));
+  const shimmerPairs = [];
+  for (let i = 1; i < activeRms.length; i++) shimmerPairs.push(Math.abs(activeRms[i] - activeRms[i - 1]) / Math.max(1e-9, (activeRms[i] + activeRms[i - 1]) / 2));
+  const metrics = {
+    analyzedSampleRate: TARGET_SR,
+    analyzedSeconds: pcm.length / TARGET_SR,
+    sourceSampleRate: sampleRate,
+    sourceSamples: src.length,
+    analyzedFrames: starts.length,
+    dcOffset: finite(dcOffset),
+    rms: finite(rms),
+    rmsDbfs: finite(db(rms)),
+    peak: finite(peak),
+    crestFactorDb: rms ? finite(db(peak / rms)) : null,
+    clipRatio: finite(clipped / pcm.length),
+    zeroCrossingRate: finite(crossings / pcm.length),
+    silenceRatio: finite(silenceRatio),
+    frameDynamicRangeDb: p10 > 0 ? finite(db(p95 / p10)) : null,
+    spectralCentroidMeanHz: finite(mean(centroids)),
+    spectralCentroidStdHz: finite(stddev(centroids)),
+    spectralFlatnessMean: finite(mean(flatness)),
+    spectralRolloff85MeanHz: finite(mean(rolloffs)),
+    highFrequencyEnergyRatio: finite(mean(hfRatios)),
+    spectralEntropyMean: finite(mean(entropies)),
+    spectralFluxMean: finite(mean(fluxes)),
+    spectralFluxStd: finite(stddev(fluxes)),
+    spectralSlopeLogLog: finite(spectralSlope(powerMean, TARGET_SR, fftSize)),
+    periodicityMean: finite(mean(periodicities)),
+    voicedFrames: f0s.length,
+    voicedRatio: starts.length ? finite(f0s.length / starts.length) : 0,
+    pitchMeanHz: finite(pitchMean),
+    pitchStdHz: finite(pitchStd),
+    pitchCv: pitchMean ? finite(pitchStd / pitchMean) : null,
+    jitterPct: jitterPairs.length ? finite(mean(jitterPairs) * 100) : null,
+    shimmerPct: shimmerPairs.length ? finite(mean(shimmerPairs) * 100) : null
+  };
+  return { status: 'ok', metrics, findings: deriveSignalFindings(metrics), pcm16k: pcm };
+}
+
+async function loadOrt(injected, statusCb) {
+  if (injected) return injected;
+  if (globalThis.ort?.InferenceSession) return globalThis.ort;
+  if (ortPromise) return ortPromise;
+  statusCb?.('Loading ONNX Runtime Web…');
+  ortPromise = new Promise((resolve, reject) => {
+    if (typeof document === 'undefined') { reject(new Error('ONNX Runtime Web must be injected outside a browser document.')); return; }
+    const script = document.createElement('script');
+    script.src = ORT_SCRIPT;
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => {
+      if (!globalThis.ort?.InferenceSession) { reject(new Error('ONNX Runtime loaded but global ort was not created.')); return; }
+      try {
+        globalThis.ort.env.wasm.wasmPaths = ORT_WASM_BASE;
+        globalThis.ort.env.wasm.numThreads = Math.min(4, Math.max(1, navigator.hardwareConcurrency || 1));
+      } catch {}
+      resolve(globalThis.ort);
+    };
+    script.onerror = () => reject(new Error(`Unable to load ONNX Runtime Web ${ORT_VERSION}.`));
+    document.head.appendChild(script);
+  });
+  return ortPromise;
+}
+
+async function getAasistSession(options = {}) {
+  const url = options.modelUrl || DEFAULT_AASIST_MODEL;
+  const injected = options.ort;
+  const cacheKey = `${url}|${injected ? 'injected' : 'default'}`;
+  if (sessionCache.has(cacheKey)) { options.statusCb?.('AASIST-L model already loaded (cached).'); return sessionCache.get(cacheKey); }
+  const p = (async () => {
+    const ort = await loadOrt(injected, options.statusCb);
+    options.statusCb?.('Downloading AASIST-L model (~766 KB, first use only)…');
+    const preferred = options.executionProviders || ['webgpu', 'wasm'];
+    let lastError;
+    for (const providers of [preferred, ['wasm']]) {
+      try {
+        const session = await ort.InferenceSession.create(url, { executionProviders: providers, graphOptimizationLevel: 'all' });
+        options.statusCb?.(`AASIST-L model ready (${providers[0]}).`);
+        return { session, ort, providers };
+      } catch (e) { lastError = e; }
+    }
+    throw lastError || new Error('Unable to create AASIST-L ONNX session.');
+  })();
+  sessionCache.set(cacheKey, p);
+  try { return await p; } catch (e) { sessionCache.delete(cacheKey); throw e; }
+}
+
+function aasistWindow(pcm16k, start) {
+  const n = pcm16k.length;
+  const out = new Float32Array(AASIST_SAMPLES);
+  if (!n) return out;
+  if (n >= AASIST_SAMPLES) {
+    out.set(pcm16k.subarray(start, Math.min(start + AASIST_SAMPLES, n)));
+    if (start + AASIST_SAMPLES > n) {
+      const have = n - start;
+      for (let i = have; i < AASIST_SAMPLES; i++) out[i] = pcm16k[i % n];
+    }
+  } else {
+    for (let i = 0; i < AASIST_SAMPLES; i++) out[i] = pcm16k[i % n];
+  }
+  return out;
+}
+
+function neuralStarts(length, hop, maxWindows) {
+  if (length <= AASIST_SAMPLES) return [0];
+  const raw = [];
+  for (let s = 0; s + AASIST_SAMPLES <= length; s += hop) raw.push(s);
+  if (!raw.length || raw[raw.length - 1] !== length - AASIST_SAMPLES) raw.push(length - AASIST_SAMPLES);
+  if (raw.length <= maxWindows) return raw;
+  const out = [];
+  for (let i = 0; i < maxWindows; i++) out.push(raw[Math.round(i * (raw.length - 1) / (maxWindows - 1))]);
+  return [...new Set(out)];
+}
+
+export async function runAasistL(pcm16kInput, options = {}) {
+  const pcm16k = pcm16kInput instanceof Float32Array ? pcm16kInput : Float32Array.from(pcm16kInput || []);
+  if (!pcm16k.length) return { status: 'unavailable', error: 'No PCM available for neural analysis.' };
+  const { session, ort, providers } = await getAasistSession(options);
+  const maxWindows = options.maxWindows || MAX_NEURAL_WINDOWS;
+  const starts = neuralStarts(pcm16k.length, options.hopSamples || 32300, maxWindows);
+  const inputName = session.inputNames?.[0] || 'wav';
+  const outputName = session.outputNames?.[0] || 'logits';
+  const segments = [];
+  for (let wi = 0; wi < starts.length; wi++) {
+    const start = starts[wi];
+    options.statusCb?.(`Running AASIST-L window ${wi + 1}/${starts.length}…`);
+    const win = aasistWindow(pcm16k, start);
+    const tensor = new ort.Tensor('float32', win, [1, AASIST_SAMPLES]);
+    const outputs = await session.run({ [inputName]: tensor });
+    const out = outputs[outputName] || outputs[session.outputNames?.find(n => outputs[n])];
+    if (!out?.data || out.data.length < 2) throw new Error('AASIST-L ONNX output did not contain two class logits.');
+    const spoofLogit = Number(out.data[0]), bonaFideLogit = Number(out.data[1]);
+    const [spoofSoftmax, bonaFideSoftmax] = softmax2(spoofLogit, bonaFideLogit);
+    segments.push({
+      startSeconds: start / TARGET_SR,
+      endSeconds: (start + AASIST_SAMPLES) / TARGET_SR,
+      spoofLogit,
+      bonaFideLogit,
+      spoofSoftmax,
+      bonaFideSoftmax
+    });
+  }
+  const probs = segments.map(s => s.spoofSoftmax);
+  const meanSpoof = mean(probs), medSpoof = median(probs), spread = stddev(probs);
+  const strongFrac = probs.filter(p => p >= 0.90).length / probs.length;
+  const syntheticLean = meanSpoof >= 0.80 && medSpoof >= 0.75;
+  return {
+    status: 'ok',
+    model: 'AASIST-L',
+    modelUrl: options.modelUrl || DEFAULT_AASIST_MODEL,
+    sampleRate: TARGET_SR,
+    windowSamples: AASIST_SAMPLES,
+    executionProviders: providers,
+    outputSemantics: 'logits[0]=spoof/synthetic class, logits[1]=bona fide; softmax shown as an uncalibrated model score',
+    calibrated: false,
+    meanSpoofScore: meanSpoof,
+    medianSpoofScore: medSpoof,
+    minSpoofScore: Math.min(...probs),
+    maxSpoofScore: Math.max(...probs),
+    stddevSpoofScore: spread,
+    strongSyntheticWindowFraction: strongFrac,
+    syntheticLean,
+    segments,
+    note: 'AASIST-L is an anti-spoofing speech model trained on ASVspoof logical-access data. Its softmax is not a universal probability of AI origin and can generalize poorly to unseen generators, codecs, music, noise, or adversarial processing.'
+  };
+}
+
+async function getC2paSdk(options = {}) {
+  if (options.sdk) return options.sdk;
+  if (c2paPromise) return c2paPromise;
+  c2paPromise = (async () => {
+    const mod = await import(options.moduleUrl || C2PA_MODULE);
+    if (typeof mod.createC2pa !== 'function') throw new Error('createC2pa export not found in c2pa-web.');
+    return mod.createC2pa({ wasmSrc: options.wasmUrl || C2PA_WASM });
+  })();
+  return c2paPromise;
+}
+
+function scanObjectStrings(value, out, path = '$', depth = 0, seen = new WeakSet()) {
+  if (depth > 12 || out.length > 5000 || value == null) return;
+  if (typeof value === 'string') { out.push({ path, value }); return; }
+  if (typeof value !== 'object') return;
+  if (seen.has(value)) return; seen.add(value);
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) scanObjectStrings(value[i], out, `${path}[${i}]`, depth + 1, seen);
+  } else {
+    for (const [k, v] of Object.entries(value)) scanObjectStrings(v, out, `${path}.${k}`, depth + 1, seen);
+  }
+}
+
+export async function validateAudioC2pa(blob, options = {}) {
+  let reader = null;
+  try {
+    const sdk = await getC2paSdk(options);
+    const mime = blob.type || options.mime || 'application/octet-stream';
+    reader = await sdk.reader.fromBlob(mime, blob);
+    const store = await reader.manifestStore();
+    const strings = []; scanObjectStrings(store, strings);
+    const sourceTypes = strings.filter(x => /cv\.iptc\.org\/newscodes\/digitalsourcetype\//i.test(x.value));
+    const aiGenerated = sourceTypes.filter(x => /\/trainedAlgorithmicMedia$/i.test(x.value));
+    const aiEdited = sourceTypes.filter(x => /\/compositeWithTrainedAlgorithmicMedia$/i.test(x.value));
+    const digitalCapture = sourceTypes.filter(x => /\/digitalCapture$/i.test(x.value));
+    const watermarkDeclarations = strings.filter(x => /c2pa\.watermarked(?:\.bound|\.unbound)?/i.test(x.value) || /watermark/i.test(x.path) && /audioseal|synthid|watermark/i.test(x.value));
+    return {
+      status: 'ok',
+      validationState: store?.validation_state || 'Unknown',
+      activeManifest: store?.active_manifest || null,
+      aiGenerated,
+      aiEdited,
+      digitalCapture,
+      watermarkDeclarations,
+      rawStore: options.includeRawStore ? store : undefined
+    };
+  } catch (e) {
+    return { status: 'unavailable', error: String(e?.message || e) };
+  } finally {
+    try { if (reader) await reader.free(); } catch {}
+  }
+}
+
+async function sha256Hex(blob) {
+  if (!globalThis.crypto?.subtle) return null;
+  const ab = await blob.arrayBuffer();
+  const hash = await crypto.subtle.digest('SHA-256', ab);
+  return [...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function runPluginDetectors(detectors, context, type) {
+  const out = [];
+  for (const detector of detectors || []) {
+    try {
+      const fn = typeof detector === 'function' ? detector : detector?.analyze;
+      if (typeof fn !== 'function') continue;
+      const result = await fn(context);
+      if (result) out.push({ name: detector?.metadata?.name || detector?.name || type, ...result });
+    } catch (e) {
+      out.push({ name: detector?.metadata?.name || detector?.name || type, status: 'error', error: String(e?.message || e) });
+    }
+  }
+  return out;
+}
+
+function buildSummary(result) {
+  const state = result.c2pa?.validationState;
+  const c2paAuth = state === 'Trusted' || state === 'Valid';
+  if (c2paAuth && result.c2pa.aiGenerated?.length) return { classification: 'AI_GENERATED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares trained-algorithmic-media origin.' };
+  if (c2paAuth && result.c2pa.aiEdited?.length) return { classification: 'AI_EDITED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares generative-AI editing.' };
+  const wmPositive = result.watermarks?.find(w => w.status === 'positive' || w.detected === true);
+  const neural = result.neural;
+  const vendor = result.container?.vendorFingerprints?.length;
+  if (wmPositive && neural?.status === 'ok' && neural.meanSpoofScore >= 0.80) return { classification: 'STRONG_SYNTHETIC_EVIDENCE', strength: 'strong', text: `A watermark detector reported ${wmPositive.name || 'a positive result'} and the neural speech detector also leans synthetic.` };
+  if (wmPositive) return { classification: 'WATERMARK_DETECTED', strength: 'strong', text: `A configured watermark detector reported a positive result (${wmPositive.name || 'scheme detected'}). Interpret according to that watermark scheme.` };
+  if (neural?.status === 'ok' && neural.meanSpoofScore >= 0.90 && neural.medianSpoofScore >= 0.85 && neural.strongSyntheticWindowFraction >= 0.60) return { classification: 'STRONG_NEURAL_SYNTHETIC_SIGNAL', strength: 'statistical', text: 'The AASIST-L anti-spoofing model consistently leans toward synthetic/spoofed speech across analyzed windows. This is statistical evidence, not provenance.' };
+  if (neural?.status === 'ok' && neural.meanSpoofScore >= 0.70) return { classification: 'POSSIBLE_SYNTHETIC_SIGNAL', strength: 'statistical', text: 'The speech anti-spoofing model leans synthetic, but the result is not strong enough to treat as origin proof.' };
+  if (vendor) return { classification: 'AI_TOOL_METADATA_FOUND', strength: 'supporting', text: 'AI/audio-generation vendor or tool strings were found in mutable container/file text. These strings are supporting evidence only.' };
+  return { classification: 'INDETERMINATE', strength: 'none', text: 'No strong provenance or configured detector evidence established AI generation. Absence of evidence does not establish a human or authentic origin.' };
+}
+
+export async function analyzePcm(pcmInput, sampleRate, options = {}) {
+  const opts = mergeOptions(options);
+  const signal = opts.signal.enabled ? analyzeSignalPcm(pcmInput, sampleRate, opts.signal) : { status: 'disabled' };
+  const pcm16k = signal.pcm16k || resampleLinear(pcmInput, sampleRate, TARGET_SR);
+  let neural = { status: 'disabled' };
+  if (opts.neural.enabled && pcm16k.length) {
+    try { neural = await runAasistL(pcm16k, opts.neural); }
+    catch (e) { neural = { status: 'unavailable', error: String(e?.message || e), model: 'AASIST-L' }; }
+  }
+  const context = { pcm: pcmInput, pcm16k, sampleRate, targetSampleRate: TARGET_SR, signal, neural, live: !!options.live };
+  const watermarks = await runPluginDetectors(opts.watermarkDetectors, context, 'watermark detector');
+  const custom = await runPluginDetectors(opts.customDetectors, context, 'custom detector');
+  const result = {
+    id: metadata.id,
+    name: metadata.name,
+    status: 'ok',
+    evidence: 'statistical',
+    score: null,
+    calibrated: false,
+    source: { kind: options.live ? 'microphone-live' : 'pcm', sampleRate, samples: pcmInput.length, duration: pcmInput.length / sampleRate },
+    signal: { ...signal, pcm16k: undefined },
+    neural,
+    watermarks,
+    custom,
+    notes: [
+      'Signal-domain anomaly findings are supporting diagnostics and are not a probability of AI generation.',
+      'AASIST-L is a speech anti-spoofing model; results on music, non-speech audio, unseen generators, heavy codecs, noise, or adversarially processed audio can be unreliable.'
+    ]
+  };
+  result.summary = buildSummary(result);
+  return result;
+}
+
+export async function analyze(input, options = {}) {
+  const opts = mergeOptions(options);
+  const statusCb = options.statusCb || (() => {});
+  if (!(input instanceof Blob)) throw new TypeError('analyze() expects a File or Blob.');
+  const name = input.name || options.name || 'audio';
+  statusCb('Reading file and parsing container/metadata…');
+  const ab = await input.arrayBuffer();
+  const bytes = new Uint8Array(ab);
+  const container = inspectAudioContainer(bytes, { mime: input.type, name });
+  const warnings = [...container.warnings];
+  let decoded = null, signal = { status: 'unavailable' }, neural = { status: 'disabled' };
+  try {
+    statusCb('Decoding audio with the Web Audio API…');
+    decoded = await decodeAudioBlob(input);
+    signal = opts.signal.enabled ? analyzeSignalPcm(decoded.pcm, decoded.sampleRate, opts.signal) : { status: 'disabled' };
+    if (opts.neural.enabled && signal.pcm16k?.length) {
+      try { neural = await runAasistL(signal.pcm16k, { ...opts.neural, statusCb }); }
+      catch (e) { neural = { status: 'unavailable', error: String(e?.message || e), model: 'AASIST-L' }; warnings.push(`Neural detector unavailable: ${neural.error}`); }
+    } else if (opts.neural.enabled) {
+      warnings.push('Neural detector skipped: no decoded PCM was available (see the decode warning below, if any).');
+    }
+  } catch (e) {
+    warnings.push(`Browser audio decoder could not decode this file: ${String(e?.message || e)}. Metadata/container results below are unaffected, but signal-domain and neural analysis could not run.`);
+  }
+  let c2pa = { status: 'disabled' };
+  if (opts.c2pa.enabled) {
+    statusCb('Validating C2PA / Content Credentials…');
+    c2pa = await validateAudioC2pa(input, { ...opts.c2pa, mime: input.type || container.format.mime });
+    if (c2pa.status === 'unavailable' && /manifest|c2pa|jumbf/i.test(decodeText(bytes.subarray(0, Math.min(bytes.length, MAX_TEXT_SCAN)), 'latin1'))) warnings.push(`C2PA-like data was seen, but validation was unavailable: ${c2pa.error}`);
+  }
+  const context = {
+    blob: input, bytes, container, decoded,
+    pcm: decoded?.pcm || null,
+    pcm16k: signal.pcm16k || null,
+    sampleRate: decoded?.sampleRate || null,
+    targetSampleRate: TARGET_SR,
+    signal, neural, c2pa,
+    live: false
+  };
+  const watermarks = await runPluginDetectors(opts.watermarkDetectors, context, 'watermark detector');
+  const custom = await runPluginDetectors(opts.customDetectors, context, 'custom detector');
+  const hash = await sha256Hex(input).catch(() => null);
+  const result = {
+    id: metadata.id,
+    name: metadata.name,
+    status: 'ok',
+    evidence: 'mixed',
+    score: null,
+    calibrated: false,
+    source: {
+      kind: 'file', name, mime: input.type || container.format.mime, bytes: input.size,
+      sha256: hash,
+      decodedSampleRate: decoded?.sampleRate || null,
+      decodedChannels: decoded?.channels || null,
+      duration: decoded?.duration || null
+    },
+    container,
+    c2pa,
+    signal: { ...signal, pcm16k: undefined },
+    neural,
+    watermarks,
+    custom,
+    warnings,
+    capabilities: {
+      audioSeal: 'plugin hook available; official AudioSeal detector is PyTorch and is not silently substituted with an unrelated browser model',
+      synthId: 'no public generic local SynthID audio detector is bundled',
+      c2pa: opts.c2pa.enabled ? 'official c2pa-web validator attempted' : 'disabled',
+      aasistL: opts.neural.enabled ? 'browser ONNX model enabled' : 'disabled'
+    },
+    notes: [
+      'No audio bytes are uploaded by this module.',
+      'External runtime/model assets may be downloaded into the browser when neural/C2PA analysis is enabled.',
+      'AI-related metadata is mutable unless bound into cryptographically validated provenance.',
+      'The neural softmax is not calibrated as a universal probability that audio is AI-generated.'
+    ]
+  };
+  result.summary = buildSummary(result);
+  return result;
+}
+
+function chooseRecorderMime() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'];
+  return candidates.find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+}
+
+function workletSource() {
+  return `
+class ProvenancePCMProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input.length || !input[0]?.length) return true;
+    const n = input[0].length;
+    const mono = new Float32Array(n);
+    for (let c = 0; c < input.length; c++) {
+      const ch = input[c];
+      for (let i = 0; i < n; i++) mono[i] += ch[i] / input.length;
+    }
+    this.port.postMessage(mono, [mono.buffer]);
+    return true;
+  }
+}
+registerProcessor('provenance-pcm-processor', ProvenancePCMProcessor);`;
+}
+
+class RollingPcm {
+  constructor(maxSamples) { this.maxSamples = maxSamples; this.chunks = []; this.samples = 0; }
+  push(chunk) {
+    if (!chunk?.length) return;
+    this.chunks.push(chunk); this.samples += chunk.length;
+    while (this.samples > this.maxSamples && this.chunks.length > 1) { const x = this.chunks.shift(); this.samples -= x.length; }
+  }
+  snapshot() {
+    const n = Math.min(this.samples, this.maxSamples);
+    const out = new Float32Array(n);
+    let write = n;
+    for (let i = this.chunks.length - 1; i >= 0 && write > 0; i--) {
+      const c = this.chunks[i], take = Math.min(c.length, write);
+      write -= take; out.set(c.subarray(c.length - take), write);
+    }
+    return out;
+  }
+}
+
+export class LiveAudioMonitor {
+  constructor(options = {}) {
+    this.options = mergeOptions(options);
+    this.stream = null; this.ctx = null; this.node = null; this.source = null; this.sink = null;
+    this.recorder = null; this.recorded = []; this.ring = null; this.timer = null;
+    this.startedAt = 0; this.analysisBusy = false; this.lastResult = null; this.workletUrl = null;
+  }
+  async start(handlers = {}) {
+    if (this.stream) throw new Error('Microphone monitor is already running.');
+    if (!globalThis.isSecureContext) throw new Error('Microphone access requires HTTPS or localhost. GitHub Pages qualifies because it is served over HTTPS.');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('getUserMedia is unavailable in this browser.');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: this.options.microphone.audioConstraints, video: false });
+    const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!AudioCtx) { stream.getTracks().forEach(t => t.stop()); throw new Error('Web Audio API is unavailable.'); }
+    const ctx = new AudioCtx();
+    await ctx.resume();
+    const blob = new Blob([workletSource()], { type: 'text/javascript' });
+    const workletUrl = URL.createObjectURL(blob);
+    await ctx.audioWorklet.addModule(workletUrl);
+    const source = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, 'provenance-pcm-processor', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const sink = ctx.createGain(); sink.gain.value = 0;
+    source.connect(node); node.connect(sink); sink.connect(ctx.destination);
+    const ring = new RollingPcm(Math.ceil(ctx.sampleRate * this.options.microphone.rollingSeconds));
+    node.port.onmessage = ev => { if (ev.data instanceof Float32Array) ring.push(ev.data); else if (ev.data?.buffer) ring.push(new Float32Array(ev.data.buffer)); };
+    this.stream = stream; this.ctx = ctx; this.source = source; this.node = node; this.sink = sink; this.ring = ring; this.workletUrl = workletUrl; this.startedAt = performance.now();
+    const mime = chooseRecorderMime();
+    if (typeof MediaRecorder !== 'undefined') {
+      try {
+        this.recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        this.recorded = [];
+        this.recorder.ondataavailable = e => { if (e.data?.size) this.recorded.push(e.data); };
+        this.recorder.start(1000);
+      } catch { this.recorder = null; }
+    }
+    handlers.onState?.({ state: 'started', sampleRate: ctx.sampleRate, recorderMime: this.recorder?.mimeType || null });
+    const tick = async () => {
+      if (this.analysisBusy || !this.stream) return;
+      const pcm = this.ring.snapshot();
+      if (pcm.length < ctx.sampleRate * 0.5) return;
+      this.analysisBusy = true;
+      try {
+        const liveOpts = mergeOptions(this.options);
+        liveOpts.c2pa.enabled = false;
+        liveOpts.neural.maxWindows = Math.min(liveOpts.neural.liveMaxWindows || 3, liveOpts.neural.maxWindows || 3);
+        const result = await analyzePcm(pcm, ctx.sampleRate, { ...liveOpts, live: true });
+        result.source.elapsedSeconds = (performance.now() - this.startedAt) / 1000;
+        this.lastResult = result;
+        handlers.onUpdate?.(result);
+      } catch (e) { handlers.onError?.(e); }
+      finally { this.analysisBusy = false; }
+    };
+    this.timer = setInterval(tick, Math.max(750, this.options.microphone.analysisIntervalMs));
+    await tick();
+    return this;
+  }
+  async stop(handlers = {}) {
+    if (!this.stream) return { blob: null, lastResult: this.lastResult };
+    clearInterval(this.timer); this.timer = null;
+    let recordedBlob = null;
+    if (this.recorder && this.recorder.state !== 'inactive') {
+      await new Promise(resolve => {
+        const done = () => resolve();
+        this.recorder.addEventListener('stop', done, { once: true });
+        try { this.recorder.stop(); } catch { resolve(); }
+      });
+      recordedBlob = new Blob(this.recorded, { type: this.recorder.mimeType || this.recorded[0]?.type || 'audio/webm' });
+    }
+    this.stream.getTracks().forEach(t => t.stop());
+    try { this.source?.disconnect(); this.node?.disconnect(); this.sink?.disconnect(); } catch {}
+    try { await this.ctx?.close(); } catch {}
+    if (this.workletUrl) URL.revokeObjectURL(this.workletUrl);
+    const elapsedSeconds = (performance.now() - this.startedAt) / 1000;
+    this.stream = null; this.ctx = null; this.node = null; this.source = null; this.sink = null; this.recorder = null; this.ring = null; this.workletUrl = null;
+    handlers.onState?.({ state: 'stopped', elapsedSeconds, recordedBytes: recordedBlob?.size || 0 });
+    return { blob: recordedBlob, lastResult: this.lastResult, elapsedSeconds };
+  }
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function pct(v, digits = 1) { return Number.isFinite(v) ? `${(v * 100).toFixed(digits)}%` : '—'; }
+function num(v, digits = 2, suffix = '') { return Number.isFinite(v) ? `${v.toFixed(digits)}${suffix}` : '—'; }
+
+function injectStyles() {
+  if (styleInjected || typeof document === 'undefined') return;
+  styleInjected = true;
+  const style = document.createElement('style');
+  style.id = 'provenance-audio-forensics-style';
+  style.textContent = `
+.prov-audio{--pa-ink:var(--ink,#111);--pa-line:var(--line,#d7d7d7);--pa-paper:var(--paper,#fff);--pa-dim:var(--paper-dim,#f5f5f5);--pa-warn:#8a5a00;--pa-bad:#a11;--pa-good:#176b45;color:var(--pa-ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+.prov-audio *{box-sizing:border-box}.prov-audio .pa-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.prov-audio .pa-box{border:1px solid var(--pa-line);padding:14px;background:var(--pa-paper)}
+.prov-audio .pa-drop{display:block;border:2px dashed var(--pa-line);padding:20px;text-align:center;cursor:pointer;background:var(--pa-dim)}.prov-audio .pa-drop.drag{border-color:var(--pa-ink)}.prov-audio input[type=file]{display:none}
+.prov-audio button{font:inherit;border:1px solid var(--pa-ink);background:var(--pa-paper);color:var(--pa-ink);padding:8px 12px;cursor:pointer}.prov-audio button.primary{background:var(--pa-ink);color:var(--pa-paper)}.prov-audio button:disabled{opacity:.45;cursor:not-allowed}
+.prov-audio .pa-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.prov-audio .pa-status{margin:12px 0;padding:9px 11px;border-left:3px solid var(--pa-line);background:var(--pa-dim)}.prov-audio .pa-status.live{border-color:var(--pa-bad)}
+.prov-audio .pa-summary{margin:14px 0;border:2px solid var(--pa-ink);padding:14px}.prov-audio .pa-stamp{font-weight:800;letter-spacing:.04em}.prov-audio .pa-sub{margin-top:5px;color:#555}.prov-audio .pa-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.prov-audio .pa-metric{border:1px solid var(--pa-line);padding:9px}.prov-audio .pa-metric b{display:block;font-size:18px}.prov-audio .pa-metric span{font-size:11px;color:#666}
+.prov-audio details{border-top:1px solid var(--pa-line);padding:9px 0}.prov-audio summary{cursor:pointer;font-weight:700}.prov-audio table{border-collapse:collapse;width:100%;margin-top:8px}.prov-audio td{border-top:1px solid var(--pa-line);padding:6px;vertical-align:top;overflow-wrap:anywhere}.prov-audio td:first-child{width:35%;font-weight:600}.prov-audio .pa-finding{padding:7px 0;border-top:1px solid var(--pa-line)}.prov-audio .pa-finding small{display:block;color:#666}.prov-audio .pa-seg{display:grid;grid-template-columns:92px 1fr 58px;align-items:center;gap:8px;padding:4px 0}.prov-audio .pa-bar{height:8px;background:var(--pa-line);position:relative}.prov-audio .pa-bar>i{display:block;height:100%;background:var(--pa-ink)}
+.prov-audio audio{width:100%;margin-top:10px}.prov-audio .pa-note{font-size:12px;color:#666}.prov-audio .pa-warn{color:var(--pa-warn)}.prov-audio .pa-error{color:var(--pa-bad)}
+@media(max-width:700px){.prov-audio .pa-grid{grid-template-columns:1fr}.prov-audio .pa-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
+  document.head.appendChild(style);
+}
+
+function rowsHtml(rows) {
+  if (!rows?.length) return '<div class="pa-note">None</div>';
+  return `<table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+}
+
+function renderResultHtml(r) {
+  const s = r.signal?.metrics || {};
+  const n = r.neural || {};
+  const findings = r.signal?.findings || [];
+  const vendors = r.container?.vendorFingerprints || [];
+  const c2pa = r.c2pa || {};
+  const neuralMetrics = n.status === 'ok' ? `
+    <div class="pa-metric"><b>${pct(n.meanSpoofScore)}</b><span>AASIST-L mean spoof score*</span></div>
+    <div class="pa-metric"><b>${pct(n.medianSpoofScore)}</b><span>median spoof score*</span></div>` : `
+    <div class="pa-metric"><b>—</b><span>neural detector</span></div>
+    <div class="pa-metric"><b>—</b><span>segment score</span></div>`;
+  const segments = n.status === 'ok' ? n.segments.map(x => `<div class="pa-seg"><span>${esc(secondsLabel(x.startSeconds))}</span><div class="pa-bar"><i style="width:${clamp(x.spoofSoftmax * 100, 0, 100).toFixed(1)}%"></i></div><b>${pct(x.spoofSoftmax, 0)}</b></div>`).join('') : `<div class="pa-note">${esc(n.error || n.status || 'Not run')}</div>`;
+  const warningHtml = (r.warnings || []).map(w => `<div class="pa-finding pa-warn">${esc(w)}</div>`).join('') || '<div class="pa-note">None</div>';
+  const hasWarnings = !!(r.warnings || []).length;
+  const bannerBits = [];
+  if (r.neural?.status !== 'ok') bannerBits.push(`neural anti-spoofing did not run (${esc(r.neural?.status || 'unknown')}${r.neural?.error ? ': ' + esc(r.neural.error) : ''})`);
+  if (r.c2pa?.status !== 'ok' && r.c2pa?.status !== 'disabled') bannerBits.push(`C2PA validation did not run (${esc(r.c2pa?.status || 'unknown')}${r.c2pa?.error ? ': ' + esc(r.c2pa.error) : ''})`);
+  const banner = bannerBits.length ? `<div class="pa-finding pa-warn" style="border:1px solid var(--pa-warn);padding:9px 11px;margin-bottom:10px;">⚠ ${bannerBits.join(' · ')} — no model download was attempted for the step(s) above. See "Warnings" below for the full detail.</div>` : '';
+  const c2paRows = c2pa.status === 'ok' ? [
+    ['Validation state', c2pa.validationState], ['Active manifest', c2pa.activeManifest || '(none)'],
+    ['AI-generated declarations', String(c2pa.aiGenerated?.length || 0)], ['AI-edit declarations', String(c2pa.aiEdited?.length || 0)],
+    ['Digital-capture declarations', String(c2pa.digitalCapture?.length || 0)], ['Watermark declarations', String(c2pa.watermarkDeclarations?.length || 0)]
+  ] : [['C2PA', c2pa.error || c2pa.status || 'not run']];
+  return `
+    ${banner}
+    <div class="pa-summary"><div class="pa-stamp">${esc(r.summary?.classification || 'INDETERMINATE')}</div><div class="pa-sub">${esc(r.summary?.text || '')}</div></div>
+    <div class="pa-metrics">
+      <div class="pa-metric"><b>${r.source?.duration ? num(r.source.duration, 1, 's') : '—'}</b><span>duration</span></div>
+      <div class="pa-metric"><b>${s.sourceSampleRate || r.source?.sampleRate || '—'}</b><span>sample rate Hz</span></div>
+      ${neuralMetrics}
+    </div>
+    <div class="pa-note">*Neural softmax scores are model outputs, not calibrated universal probabilities of AI origin.</div>
+    <details open><summary>Neural anti-spoof timeline</summary>${segments}</details>
+    <details><summary>Signal forensics</summary>${rowsHtml([
+      ['RMS', num(s.rms, 5)], ['RMS dBFS', num(s.rmsDbfs, 2, ' dB')], ['Peak', num(s.peak, 5)], ['Crest factor', num(s.crestFactorDb, 2, ' dB')],
+      ['Clipping ratio', pct(s.clipRatio, 3)], ['Silence ratio', pct(s.silenceRatio)], ['Spectral centroid', num(s.spectralCentroidMeanHz, 0, ' Hz')], ['Spectral flatness', num(s.spectralFlatnessMean, 4)],
+      ['Spectral rolloff 85%', num(s.spectralRolloff85MeanHz, 0, ' Hz')], ['Spectral entropy', num(s.spectralEntropyMean, 4)], ['Spectral flux', num(s.spectralFluxMean, 4)], ['HF energy ratio', pct(s.highFrequencyEnergyRatio, 2)],
+      ['Voiced-frame ratio', pct(s.voicedRatio)], ['Pitch mean', num(s.pitchMeanHz, 1, ' Hz')], ['Pitch stddev', num(s.pitchStdHz, 1, ' Hz')], ['Jitter proxy', num(s.jitterPct, 2, '%')], ['Shimmer proxy', num(s.shimmerPct, 2, '%')], ['Periodicity', num(s.periodicityMean, 3)]
+    ])}${findings.map(f => `<div class="pa-finding"><b>${esc(f.label)}</b><small>${esc(f.detail)}</small></div>`).join('')}</details>
+    ${r.container ? `<details><summary>Container / metadata</summary>${rowsHtml(r.container.containerRows)}${rowsHtml(r.container.metadataRows)}${vendors.map(v => `<div class="pa-finding"><b>${esc(v.vendor)}</b><small>${esc(v.match)} · mutable/supporting fingerprint</small></div>`).join('')}</details>` : ''}
+    ${r.c2pa ? `<details><summary>C2PA / provenance</summary>${rowsHtml(c2paRows)}</details>` : ''}
+    ${(r.watermarks?.length || r.custom?.length) ? `<details><summary>Plugin detectors</summary>${[...(r.watermarks || []), ...(r.custom || [])].map(x => `<div class="pa-finding"><b>${esc(x.name)}</b><small>${esc(x.summary || x.status || x.error || '')}</small></div>`).join('')}</details>` : ''}
+    ${r.warnings ? `<details${hasWarnings ? ' open' : ''}><summary>Warnings${hasWarnings ? ` (${r.warnings.length})` : ''}</summary>${warningHtml}</details>` : ''}`;
+}
+
+export function mountAudioForensicsUI(target, options = {}) {
+  if (typeof document === 'undefined') throw new Error('mountAudioForensicsUI() requires a browser document.');
+  injectStyles();
+  const root = typeof target === 'string' ? document.querySelector(target) : target;
+  if (!root) throw new Error('Audio forensics mount target was not found.');
+  const opts = mergeOptions(options);
+  root.classList.add('prov-audio');
+  root.innerHTML = `
+    <div class="pa-grid">
+      <div class="pa-box">
+        <label class="pa-drop" data-pa-drop><b>Upload or drop audio</b><br><span class="pa-note">WAV · MP3 · M4A/AAC · FLAC · Ogg/Opus · WebM · AIFF (browser decode support varies)</span><input data-pa-file type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.webm,.aiff,.aif"></label>
+        <audio data-pa-player controls hidden></audio>
+      </div>
+      <div class="pa-box">
+        <b>Live microphone analysis</b>
+        <p class="pa-note">Runs rolling PCM signal analysis and AASIST-L speech anti-spoofing locally while the microphone is active. Echo cancellation, noise suppression, and automatic gain control are requested off by default.</p>
+        <div class="pa-actions"><button class="primary" data-pa-start>Start microphone</button><button data-pa-stop disabled>Stop & analyze recording</button></div>
+        <div class="pa-note" data-pa-micnote>${globalThis.isSecureContext ? 'Microphone permission will be requested when started.' : 'Microphone requires HTTPS or localhost.'}</div>
+      </div>
+    </div>
+    <div class="pa-status" data-pa-status aria-live="polite">Ready.</div>
+    <div data-pa-result></div>
+    <div class="pa-actions"><button data-pa-json disabled>Download result JSON</button></div>`;
+  const q = sel => root.querySelector(sel);
+  const drop = q('[data-pa-drop]'), fileInput = q('[data-pa-file]'), status = q('[data-pa-status]'), resultEl = q('[data-pa-result]'), player = q('[data-pa-player]');
+  const startBtn = q('[data-pa-start]'), stopBtn = q('[data-pa-stop]'), jsonBtn = q('[data-pa-json]');
+  let monitor = null, lastResult = null, objectUrl = null, destroyed = false;
+
+  const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle('live', live); };
+  const setPlayer = blob => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = blob ? URL.createObjectURL(blob) : null;
+    if (objectUrl) { player.src = objectUrl; player.hidden = false; } else { player.removeAttribute('src'); player.hidden = true; }
+  };
+  const showResult = r => {
+    lastResult = r; resultEl.innerHTML = renderResultHtml(r); jsonBtn.disabled = false;
+    try { options.onResult?.(r); } catch {}
+    root.dispatchEvent(new CustomEvent('audioforensics:result', { detail: r }));
+  };
+  const runBlob = async blob => {
+    if (!blob?.size || destroyed) return null;
+    setPlayer(blob); setStatus(`Analyzing ${blob.name || 'recording'}…`);
+    try {
+      const r = await analyze(blob, { ...opts, statusCb: msg => { if (!destroyed) setStatus(msg); } });
+      if (!destroyed) {
+        showResult(r);
+        const bits = [`Analysis complete — ${r.neural?.status === 'ok' ? 'AASIST-L ran' : `neural: ${r.neural?.status || 'skipped'}`}, ${r.c2pa?.status === 'ok' ? 'C2PA checked' : `C2PA: ${r.c2pa?.status || 'skipped'}`}`];
+        if (r.warnings?.length) bits.push(`${r.warnings.length} warning(s) below`);
+        setStatus(bits.join(' · ') + '.');
+      }
+      return r;
+    } catch (e) { console.error('Audio forensics analysis failed:', e); if (!destroyed) setStatus(`Analysis failed: ${e?.message || e}`); throw e; }
+  };
+
+  fileInput.addEventListener('change', () => { const f = fileInput.files?.[0]; if (f) runBlob(f).catch(() => {}); });
+  for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); });
+  for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); });
+  drop.addEventListener('drop', e => { const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|flac|ogg|opus|webm|aiff?|mp4)$/i.test(x.name)); if (f) runBlob(f).catch(() => {}); });
+
+  if (!globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia) startBtn.disabled = true;
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true; setStatus('Requesting microphone permission…', true);
+    try {
+      monitor = new LiveAudioMonitor(opts);
+      await monitor.start({
+        onState: s => { if (s.state === 'started') { stopBtn.disabled = false; setStatus(`Listening live at ${s.sampleRate} Hz…`, true); } },
+        onUpdate: r => { showResult(r); setStatus(`Listening live · ${num(r.source.elapsedSeconds || 0, 1, 's')} elapsed`, true); },
+        onError: e => setStatus(`Live analysis error: ${e?.message || e}`, true)
+      });
+    } catch (e) { monitor = null; startBtn.disabled = false; stopBtn.disabled = true; setStatus(`Microphone could not start: ${e?.message || e}`); }
+  });
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true; setStatus('Stopping microphone and finalizing recording…');
+    try {
+      const stopped = await monitor?.stop(); monitor = null; startBtn.disabled = false;
+      if (stopped?.blob?.size) await runBlob(new File([stopped.blob], `microphone-${new Date().toISOString().replace(/[:.]/g, '-')}.${stopped.blob.type.includes('ogg') ? 'ogg' : stopped.blob.type.includes('mp4') ? 'm4a' : 'webm'}`, { type: stopped.blob.type }));
+      else { setStatus('Microphone stopped. No encoded recording was available; the last live PCM result is retained.'); }
+    } catch (e) { startBtn.disabled = false; setStatus(`Microphone stop/final analysis failed: ${e?.message || e}`); }
+  });
+  jsonBtn.addEventListener('click', () => {
+    if (!lastResult) return;
+    const b = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
+    const u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'audio-forensics-result.json'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+  });
+
+  return {
+    analyze: runBlob,
+    startMicrophone: () => startBtn.click(),
+    stopMicrophone: () => stopBtn.click(),
+    getLastResult: () => lastResult,
+    async destroy() {
+      destroyed = true;
+      try { await monitor?.stop(); } catch {}
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      root.innerHTML = ''; root.classList.remove('prov-audio');
+    }
+  };
+}
+
+export const modelContracts = Object.freeze({
+  aasistL: {
+    model: 'SpeechAntiSpoofingBenchmarks/AASIST-L',
+    inputName: 'wav',
+    inputShape: ['batch', 64600],
+    inputType: 'float32',
+    sampleRate: 16000,
+    preprocessing: 'mono; first 64600 samples per window; tile-repeat when shorter; no per-window normalization',
+    outputName: 'logits',
+    outputShape: ['batch', 2],
+    classes: ['spoof/synthetic', 'bona fide'],
+    interpretation: 'softmax(logits)[0] is exposed as an uncalibrated spoof model score'
+  },
+  audioSealPlugin: {
+    requirement: 'Detector callback should accept {pcm16k, sampleRate, ...} and return {status:"positive"|"negative"|"indeterminate", detected, intervals?, score?, summary?}.',
+    note: 'The official AudioSeal release is PyTorch. Export/host an exact detector model or wrap another trusted local runtime; do not substitute heuristic spectral features and call them AudioSeal.'
+  }
+});
+
+export default {
+  metadata,
+  analyze,
+  analyzePcm,
+  analyzeSignalPcm,
+  inspectAudioContainer,
+  identifyAudioFormat,
+  runAasistL,
+  validateAudioC2pa,
+  LiveAudioMonitor,
+  mountAudioForensicsUI,
+  modelContracts
+};
+
+  
 /* ---------------- Metadata AI signatures ---------------- */
 function inspectMetadataText(key, value, f, source) {
   const k=String(key||''), v=String(value||''), combined=`${k} ${v}`;
