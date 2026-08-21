@@ -366,7 +366,6 @@ const UTIF_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js';
 const C2PA_BMFF_UUID = new Uint8Array([0xD8,0xFE,0xC3,0xD6,0x1B,0x0E,0x48,0x3C,0x92,0x97,0x58,0x28,0x87,0x7E,0xC4,0x81]);
 const C2PA_TIFF_TAG = 0xCD41;
 const MAX_NEURAL_PIXELS = 120_000_000;
-const FORENSICS_MODULE_URL = './forensics/index.js';
 
 const DST = Object.freeze({
   AI_GENERATED: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
@@ -1737,7 +1736,7 @@ function renderBatch(results) {
   const aiCount = results.filter(r => r.verdict.className === 'ai').length;
   resultsSummary.textContent = `${results.length} file${results.length===1?'':'s'} analyzed · ${aiCount} flagged AI-generated/edited`;
   resultsToolbar.classList.toggle('show', results.length > 0);
-  document.getElementById('dl-batch-csv').style.display = results.length > 1 ? '' : 'none';
+  document.getElementById('dl-batch-csv').style.display = results.length > 0 ? '' : 'none';
 }
 
 /* ---------------- Batch runner + progress ---------------- */
@@ -3052,10 +3051,10 @@ export function mountAudioForensicsUI(target, options = {}) {
     </div>
     <div class="pa-status" data-pa-status aria-live="polite">Ready.</div>
     <div data-pa-result></div>
-    <div class="pa-actions"><button data-pa-json disabled>Download result JSON</button></div>`;
+    <div class="pa-actions"><button data-pa-json disabled>Download result JSON</button><button data-pa-csv disabled>Download result CSV</button></div>`;
   const q = sel => root.querySelector(sel);
   const drop = q('[data-pa-drop]'), fileInput = q('[data-pa-file]'), status = q('[data-pa-status]'), resultEl = q('[data-pa-result]'), player = q('[data-pa-player]');
-  const startBtn = q('[data-pa-start]'), stopBtn = q('[data-pa-stop]'), jsonBtn = q('[data-pa-json]');
+  const startBtn = q('[data-pa-start]'), stopBtn = q('[data-pa-stop]'), jsonBtn = q('[data-pa-json]'), csvBtn = q('[data-pa-csv]');
   let monitor = null, lastResult = null, objectUrl = null, destroyed = false;
 
   const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle('live', live); };
@@ -3065,7 +3064,7 @@ export function mountAudioForensicsUI(target, options = {}) {
     if (objectUrl) { player.src = objectUrl; player.hidden = false; } else { player.removeAttribute('src'); player.hidden = true; }
   };
   const showResult = r => {
-    lastResult = r; resultEl.innerHTML = renderResultHtml(r); jsonBtn.disabled = false;
+    lastResult = r; resultEl.innerHTML = renderResultHtml(r); jsonBtn.disabled = false; csvBtn.disabled = false;
     try { options.onResult?.(r); } catch {}
     root.dispatchEvent(new CustomEvent('audioforensics:result', { detail: r }));
   };
@@ -3113,6 +3112,23 @@ export function mountAudioForensicsUI(target, options = {}) {
     if (!lastResult) return;
     const b = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
     const u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'audio-forensics-result.json'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+  });
+  csvBtn.addEventListener('click', () => {
+    if (!lastResult) return;
+    const csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+    const r = lastResult;
+    const headers = ['Source Name','Duration (s)','Sample Rate','Classification','C2PA State','Neural Mean Spoof %','Neural Median Spoof %','Vendor Fingerprints','Warning Count','SHA-256'];
+    const row = [
+      r.source?.name || '(microphone)', r.source?.duration ?? '', r.source?.sampleRate ?? r.signal?.metrics?.sourceSampleRate ?? '',
+      r.summary?.classification || '', r.c2pa?.validationState || r.c2pa?.status || '',
+      r.neural?.status === 'ok' ? (r.neural.meanSpoofScore*100).toFixed(1) : '',
+      r.neural?.status === 'ok' ? (r.neural.medianSpoofScore*100).toFixed(1) : '',
+      (r.container?.vendorFingerprints || []).map(v => v.vendor).join('; '),
+      (r.warnings || []).length, r.source?.sha256 || ''
+    ];
+    const csv = [headers.map(csvCell).join(','), row.map(csvCell).join(',')].join('\n');
+    const b = new Blob([csv], { type: 'text/csv' });
+    const u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'audio-forensics-result.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
   });
 
   return {
