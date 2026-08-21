@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -218,7 +219,7 @@
 
   <section class="panel">
     <h2>Exhibit intake</h2>
-    <div class="panel-sub">Drop or select one or many files. Supported: PNG, JPEG, WebP, HEIC/HEIF, AVIF, TIFF, GIF, BMP, SVG, JPEG XL, MP4, WebM, and RAW (CR2/NEF/ARW/DNG/ORF/RW2/RAF — <b>beta</b>, metadata only, no pixel preview).</div>
+    <div class="panel-sub">Drop or select one or many files. Supported: PNG, JPEG, WebP, HEIC/HEIF, AVIF, TIFF, GIF, BMP, SVG, JPEG XL, MP4, WebM, and RAW (CR2/NEF/ARW/DNG/ORF/RW2/RAF — <b>beta</b>, metadata only, no pixel preview). <b>Audio/voice files (WAV, MP3, FLAC, etc.) are not accepted here</b> — this box is image/video only. Use the <a href="#audio-forensics-section" style="color:var(--accent);">Audio / voice forensics section below</a> instead.</div>
     <label id="drop">
       <div class="big">Drop files, or click to choose (multiple allowed)</div>
       <div class="small">Everything runs locally in your browser; only checked model-backed detectors fetch anything external, and only their own weights.</div>
@@ -235,7 +236,7 @@
   </div>
   <div id="results"></div>
 
-  <section class="panel">
+  <section class="panel" id="audio-forensics-section">
     <h2>Audio / voice forensics</h2>
     <div class="panel-sub">A separate, independent module for speech/audio — upload a file or analyze your microphone live. Runs container/metadata parsing (WAV/BWF/MP3/FLAC/Ogg/Opus/MP4/M4A, plus AIFF/WebM identification), an optional C2PA check, signal-domain acoustic measurements, and a real AASIST-L anti-spoofing ONNX model (~766 KB, MIT-licensed) on overlapping 4-second windows. AASIST-L is trained for speech anti-spoofing specifically — its published accuracy is excellent in-domain (0.99% EER on ASVspoof2019 LA) but drops sharply on unseen conditions (44.45% EER on In-The-Wild, 50.72% on CD-ADD per its model card), so its score is shown as a labeled anti-spoofing signal, never a universal "AI probability." No audio is uploaded anywhere; only the small runtime/model files are fetched into your browser.</div>
     <div id="audio-forensics"></div>
@@ -1709,10 +1710,35 @@ document.getElementById('dl-batch-csv').addEventListener('click', () => {
 /* ---------------- Intake wiring ---------------- */
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
+
+// accept="" only filters the click-to-browse dialog; it does nothing for drag-and-drop.
+// Route audio-looking files to the audio module instead of letting them fail silently
+// in the image/video pipeline (which has no meaningful way to handle a .wav/.mp3/etc.).
+const AUDIO_ONLY_EXT = /\.(wav|mp3|m4a|aac|flac|ogg|opus|aiff|aif)$/i;
+function isLikelyAudioFile(file) {
+  return (file.type && file.type.startsWith('audio/')) || AUDIO_ONLY_EXT.test(file.name || '');
+}
+async function routeIncomingFiles(fileListLike) {
+  const files = Array.from(fileListLike || []);
+  if (!files.length) return;
+  const audioFiles = files.filter(isLikelyAudioFile);
+  const otherFiles = files.filter(f => !isLikelyAudioFile(f));
+  if (audioFiles.length) {
+    if (window.audioForensicsApi) {
+      statusEl.textContent = `Redirecting ${audioFiles.length} audio file(s) to the Audio / voice forensics section below…`;
+      document.getElementById('audio-forensics-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      for (const f of audioFiles) { try { await window.audioForensicsApi.analyze(f); } catch {} }
+    } else {
+      statusEl.textContent = `${audioFiles.length} audio file(s) were skipped here — this box is image/video only. The Audio / voice forensics section (below) is still loading; try again in a moment or use its own upload box directly.`;
+    }
+  }
+  if (otherFiles.length) runBatch(otherFiles);
+}
+
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files.length) runBatch(e.dataTransfer.files); });
-fileInput.addEventListener('change', () => { if (fileInput.files.length) runBatch(fileInput.files); });
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files.length) routeIncomingFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { if (fileInput.files.length) routeIncomingFiles(fileInput.files); });
 document.addEventListener('paste', e => {
   const items = [...(e.clipboardData?.items || [])].filter(i => i.type.startsWith('image/'));
   if (items.length) runBatch(items.map(i => i.getAsFile()).filter(Boolean));
@@ -1733,7 +1759,9 @@ helpModal.addEventListener('click', e => { if (e.target === helpModal) helpModal
 // its own CSS namespace, its own upload/mic UI, its own detectors. It never touches the
 // image/video verdict pipeline above; mounting it is a single call.
 import { mountAudioForensicsUI } from './audio/audio-forensics.js';
-mountAudioForensicsUI('#audio-forensics');
+// Exposed on window so the main image/video intake box (a separate classic <script>)
+// can redirect misplaced audio drops here instead of failing silently.
+window.audioForensicsApi = mountAudioForensicsUI('#audio-forensics');
 </script>
 </body>
 </html>
