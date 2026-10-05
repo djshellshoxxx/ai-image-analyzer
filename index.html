@@ -1576,6 +1576,7 @@ async function analyzeOneFile(file, cfg, statusCb) {
 
   // Advanced model-backed modules
   const advInput = pixelCanvas || file;
+  reportMissingAdvancedConfiguration(cfg, f, !!pixelCanvas);
   if (cfg.advModel.noiseprint.on && cfg.advModel.noiseprint.residualUrl && cfg.advModel.noiseprint.featureUrl && pixelCanvas) {
     statusCb?.('Running Noiseprint++…'); const forensics = await getForensics();
     try { const r = await forensics.noiseprintCluster.analyze(advInput, {config:{noiseprintModelUrl:cfg.advModel.noiseprint.residualUrl, featureModelUrl:cfg.advModel.noiseprint.featureUrl}}); f.advanced.model.push(r); }
@@ -1588,7 +1589,11 @@ async function analyzeOneFile(file, cfg, statusCb) {
   }
   if (cfg.advModel.diffprint.on && cfg.advModel.diffprint.url && pixelCanvas) {
     statusCb?.('Running DiffusionPrint localizer…'); const forensics = await getForensics();
-    try { const r = await forensics.diffusionprintLocalizer.analyze(advInput,{modelConfig:{modelUrl:cfg.advModel.diffprint.url, outputMode:cfg.advModel.diffprint.outputMode}}); f.advanced.model.push(r); }
+    try {
+      const r = await forensics.diffusionprintLocalizer.analyze(advInput,{modelConfig:{modelUrl:cfg.advModel.diffprint.url, outputMode:cfg.advModel.diffprint.outputMode}});
+      r.ui = { heatmapDataUrl: imageDataToDataUrl(r.artifacts?.heatmapImage) };
+      f.advanced.model.push(r);
+    }
     catch(e){ f.advanced.model.push({id:'diffusionprint-localizer',name:'DiffusionPrint Patch Localization',status:'error',error:String(e?.message||e)}); }
   }
   if (cfg.advModel.gaussian.on && cfg.advModel.gaussian.url && pixelCanvas) {
@@ -1609,6 +1614,38 @@ async function analyzeOneFile(file, cfg, statusCb) {
 
   const verdict = evaluateVerdict(f);
   return { file, format, dimensions, verdict, f, videoInfo: videoInfo ? {duration:videoInfo.duration, framesSampled:videoInfo.canvases.length} : null };
+}
+
+function reportMissingAdvancedConfiguration(cfg, f, hasPixels) {
+  const add = msg => addWarning(f, msg);
+  if (cfg.advModel.noiseprint.on && (!cfg.advModel.noiseprint.residualUrl || !cfg.advModel.noiseprint.featureUrl))
+    add('Noiseprint++ is enabled but both the residual-model URL and feature-encoder URL are required; the detector was not run.');
+  if (cfg.advModel.diffrecon.on && !cfg.advModel.diffrecon.url)
+    add('Diffusion reconstruction is enabled but no reconstructor model URL was supplied; the detector was not run.');
+  if (cfg.advModel.diffprint.on && !cfg.advModel.diffprint.url)
+    add('DiffusionPrint is enabled but no patch-classifier model URL was supplied; the detector was not run.');
+  if (cfg.advModel.gaussian.on && !cfg.advModel.gaussian.url)
+    add('Gaussian embedding is enabled but no frozen-encoder model URL was supplied; the detector was not run.');
+  if (cfg.advModel.editprint.on && !cfg.advModel.editprint.url)
+    add('Editprint is enabled but no ONNX model URL was supplied; the detector was not run.');
+  if (cfg.advModel.prnu.on && !cfg.advModel.prnu.refFiles.length)
+    add('PRNU is enabled but no same-camera reference photos were supplied; the detector was not run.');
+  if (!hasPixels && Object.values(cfg.advModel).some(v => v?.on))
+    add('One or more model-backed/pixel forensic detectors were enabled, but this file has no decodable pixel canvas; those detectors were skipped.');
+}
+
+function imageDataToDataUrl(imageData) {
+  if (!imageData || !imageData.width || !imageData.height) return null;
+  try {
+    const c = document.createElement('canvas');
+    c.width = imageData.width; c.height = imageData.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.putImageData(imageData, 0, 0);
+    return c.toDataURL('image/png');
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------- Export builders ---------------- */
@@ -1689,7 +1726,11 @@ function evidenceRows(f) {
 function advancedMiniGrid(f) {
   const all = [...(f.advanced.auto||[]), ...(f.advanced.model||[])];
   if (!all.length) return '';
-  return `<div class="adv-mini-grid">${all.map(r => `<div class="adv-mini-card"><b>${esc(r.name||r.id)}</b>${r.status==='error'?`<span style="color:var(--bad)">Failed: ${esc(r.error)}</span>`:esc(r.summary||'(no summary)')}</div>`).join('')}</div>`;
+  return `<div class="adv-mini-grid">${all.map(r => {
+    const heatmap = r.ui?.heatmapDataUrl ? `<img src="${esc(r.ui.heatmapDataUrl)}" alt="DiffusionPrint localization heatmap" style="display:block;max-width:100%;height:auto;margin-top:8px;border:1px solid #bbb;image-rendering:auto;">` : '';
+    const body = r.status==='error' ? `<span style="color:var(--bad)">Failed: ${esc(r.error)}</span>` : esc(r.summary||'(no summary)');
+    return `<div class="adv-mini-card"><b>${esc(r.name||r.id)}</b>${body}${heatmap}</div>`;
+  }).join('')}</div>`;
 }
 function buildFileCard(result, idx) {
   const { file, format, verdict, f } = result;
