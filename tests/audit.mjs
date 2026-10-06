@@ -47,6 +47,7 @@ assert.ok(html.includes('ORT_SESSION_CACHE'), 'embedded ONNX helpers must cache 
 assert.ok(html.includes('advancedModelSkipResult'), 'enabled advanced detectors that cannot run must appear explicitly as skipped results');
 assert.ok((html.match(/MAX_PRNU_PIXELS/g) || []).length > 1, 'PRNU must have an explicit browser workload guard');
 assert.ok(html.includes('c2paSdkShouldAttempt'), 'checked C2PA validation must not depend solely on custom raw-hint detection');
+assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
