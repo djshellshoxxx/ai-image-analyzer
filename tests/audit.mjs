@@ -48,6 +48,7 @@ assert.ok(html.includes('advancedModelSkipResult'), 'enabled advanced detectors 
 assert.ok((html.match(/MAX_PRNU_PIXELS/g) || []).length > 1, 'PRNU must have an explicit browser workload guard');
 assert.ok(html.includes('c2paSdkShouldAttempt'), 'checked C2PA validation must not depend solely on custom raw-hint detection');
 assert.ok(html.includes('.srw'), 'Samsung SRW parser support must be exposed by the UI/file picker');
+assert.ok(html.includes('audio/*,.wav,.mp3,.m4a,.mp4,.aac'), 'audio MP4 support must be exposed by the dedicated audio picker');
 assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
