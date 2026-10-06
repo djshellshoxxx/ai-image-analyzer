@@ -2980,6 +2980,17 @@ function scanObjectStrings(value, out, path = '$', depth = 0, seen = new WeakSet
   }
 }
 
+function audioManifestActions(manifest) {
+  const out=[];
+  for (const assertion of manifest?.assertions || []) {
+    if (/^c2pa\.actions(?:\.v\d+)?$/.test(assertion?.label || '') && Array.isArray(assertion?.data?.actions))
+      out.push(...assertion.data.actions);
+  }
+  return out;
+}
+function audioSourceTypes(manifest) {
+  return audioManifestActions(manifest).map(a=>a?.digitalSourceType).filter(Boolean);
+}
 export async function validateAudioC2pa(blob, options = {}) {
   let reader = null;
   try {
@@ -2987,19 +2998,32 @@ export async function validateAudioC2pa(blob, options = {}) {
     const mime = blob.type || options.mime || 'application/octet-stream';
     reader = await sdk.reader.fromBlob(mime, blob);
     const store = await reader.manifestStore();
-    const strings = []; scanObjectStrings(store, strings);
-    const sourceTypes = strings.filter(x => /cv\.iptc\.org\/newscodes\/digitalsourcetype\//i.test(x.value));
-    const aiGenerated = sourceTypes.filter(x => /\/trainedAlgorithmicMedia$/i.test(x.value));
-    const aiEdited = sourceTypes.filter(x => /\/compositeWithTrainedAlgorithmicMedia$/i.test(x.value));
-    const digitalCapture = sourceTypes.filter(x => /\/digitalCapture$/i.test(x.value));
-    const watermarkDeclarations = strings.filter(x => /c2pa\.watermarked(?:\.bound|\.unbound)?/i.test(x.value) || /watermark/i.test(x.path) && /audioseal|synthid|watermark/i.test(x.value));
+    const active = store?.active_manifest ? store?.manifests?.[store.active_manifest] : null;
+    const activeSourceTypes = audioSourceTypes(active);
+    const ingredientSourceTypes = [];
+    for (const ing of active?.ingredients || []) {
+      if (!ing?.active_manifest) continue;
+      const ingredientManifest = store?.manifests?.[ing.active_manifest];
+      for (const dst of audioSourceTypes(ingredientManifest)) if (!ingredientSourceTypes.includes(dst)) ingredientSourceTypes.push(dst);
+    }
+    const aiGenerated = activeSourceTypes.filter(x => /\/trainedAlgorithmicMedia$/i.test(x));
+    const aiEdited = activeSourceTypes.filter(x => /\/compositeWithTrainedAlgorithmicMedia$/i.test(x));
+    const digitalCapture = activeSourceTypes.filter(x => /\/digitalCapture$/i.test(x));
+    const ingredientAiGenerated = ingredientSourceTypes.filter(x => /\/trainedAlgorithmicMedia$/i.test(x));
+    const ingredientAiEdited = ingredientSourceTypes.filter(x => /\/compositeWithTrainedAlgorithmicMedia$/i.test(x));
+    const strings = []; scanObjectStrings(active || {}, strings);
+    const watermarkDeclarations = strings.filter(x => /c2pa\.watermarked(?:\.bound|\.unbound)?/i.test(x.value) || (/watermark/i.test(x.path) && /audioseal|synthid|watermark/i.test(x.value)));
     return {
       status: 'ok',
       validationState: store?.validation_state || 'Unknown',
       activeManifest: store?.active_manifest || null,
+      activeSourceTypes,
+      ingredientSourceTypes,
       aiGenerated,
       aiEdited,
       digitalCapture,
+      ingredientAiGenerated,
+      ingredientAiEdited,
       watermarkDeclarations,
       rawStore: options.includeRawStore ? store : undefined
     };
@@ -3035,8 +3059,9 @@ async function runPluginDetectors(detectors, context, type) {
 function buildSummary(result) {
   const state = result.c2pa?.validationState;
   const c2paAuth = state === 'Trusted' || state === 'Valid';
-  if (c2paAuth && result.c2pa.aiGenerated?.length) return { classification: 'AI_GENERATED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares trained-algorithmic-media origin.' };
-  if (c2paAuth && result.c2pa.aiEdited?.length) return { classification: 'AI_EDITED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares generative-AI editing.' };
+  if (c2paAuth && result.c2pa.aiGenerated?.length) return { classification: 'AI_GENERATED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares trained-algorithmic-media origin for the active audio asset.' };
+  if (c2paAuth && result.c2pa.aiEdited?.length) return { classification: 'AI_EDITED_DECLARED', strength: 'provenance', text: 'Validated C2PA provenance declares generative-AI editing for the active audio asset.' };
+  if (c2paAuth && (result.c2pa.ingredientAiGenerated?.length || result.c2pa.ingredientAiEdited?.length)) return { classification: 'AI_DERIVED_DECLARED', strength: 'provenance', text: 'The active audio asset has validated provenance containing an AI-generated or AI-edited ingredient; the active manifest itself does not declare AI generation.' };
   const wmPositive = result.watermarks?.find(w => w.status === 'positive' || w.detected === true);
   const neural = result.neural;
   const vendor = result.container?.vendorFingerprints?.length;
