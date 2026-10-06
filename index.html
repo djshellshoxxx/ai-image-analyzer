@@ -1649,16 +1649,22 @@ async function analyzeOneFile(file, cfg, statusCb) {
   // Advanced no-model forensic modules
   const anyAutoOn = AUTO_FORENSICS.some(m => cfg.advAuto[m.key]);
   if (anyAutoOn) {
-    if (pixelCanvas) {
-      statusCb?.('Running advanced signal modules…');
-      const forensics = await getForensics();
-      for (const m of AUTO_FORENSICS) {
-        if (!cfg.advAuto[m.key]) continue;
-        const mod = forensics[m.modName];
-        try { const result = await mod.analyze(pixelCanvas); f.advanced.auto.push(result); }
-        catch (e) { f.advanced.auto.push({ id: mod.metadata?.id || m.key, name: mod.metadata?.name || m.key, status:'error', error: String(e?.message||e) }); }
+    statusCb?.('Running advanced signal modules…');
+    const forensics = await getForensics();
+    let skippedPixelModules = 0;
+    for (const m of AUTO_FORENSICS) {
+      if (!cfg.advAuto[m.key]) continue;
+      const mod = forensics[m.modName];
+      const input = m.key === 'jpegfp' ? file : pixelCanvas;
+      if (!input) {
+        skippedPixelModules++;
+        f.advanced.auto.push({ id: mod.metadata?.id || m.key, name: mod.metadata?.name || m.key, status:'skipped-no-pixels', summary:'Skipped because no decoded pixel canvas was available.' });
+        continue;
       }
-    } else addWarning(f, 'Advanced no-model signal modules skipped: no decoded pixels available for this file (RAW, or pixel decode failed).');
+      try { const result = await mod.analyze(input); f.advanced.auto.push(result); }
+      catch (e) { f.advanced.auto.push({ id: mod.metadata?.id || m.key, name: mod.metadata?.name || m.key, status:'error', error: String(e?.message||e) }); }
+    }
+    if (skippedPixelModules) addWarning(f, `${skippedPixelModules} advanced pixel signal module(s) were skipped because no decoded pixels were available; file-structure modules such as JPEG fingerprinting can still run from the original bytes.`);
   }
 
   // Advanced model-backed modules
