@@ -79,8 +79,8 @@ for (const doc of [
   assert.ok(fs.existsSync(doc), 'missing referenced documentation: ' + doc.pathname);
 }
 
-const scriptTags = [...html.matchAll(/<script([^>]*)>([\\s\\S]*?)<\\/script>/gi)]
-  .filter(([,attrs]) => !/type=["']application\\/json["']/i.test(attrs));
+const scriptTags = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]
+  .filter(([,attrs]) => !/type=["']application\/json["']/i.test(attrs));
 assert.ok(scriptTags.length >= 2, 'expected classic analyzer script and module audio script');
 for (let i = 0; i < scriptTags.length; i++) {
   const attrs = scriptTags[i][1];
