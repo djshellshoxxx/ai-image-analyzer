@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -51,4 +54,19 @@ for (const doc of [
   assert.ok(fs.existsSync(doc), 'missing referenced documentation: ' + doc.pathname);
 }
 
-console.log('ai-image-analyzer structural audit passed');
+const scriptTags = [...html.matchAll(/<script([^>]*)>([\\s\\S]*?)<\\/script>/gi)]
+  .filter(([,attrs]) => !/type=["']application\\/json["']/i.test(attrs));
+assert.ok(scriptTags.length >= 2, 'expected classic analyzer script and module audio script');
+for (let i = 0; i < scriptTags.length; i++) {
+  const attrs = scriptTags[i][1];
+  const code = scriptTags[i][2];
+  if (!code.trim()) continue;
+  const ext = /type=["']module["']/i.test(attrs) ? '.mjs' : '.js';
+  const tmp = path.join(os.tmpdir(), 'ai-image-analyzer-inline-' + i + ext);
+  fs.writeFileSync(tmp, code);
+  const checked = spawnSync(process.execPath, ['--check', tmp], { encoding:'utf8' });
+  try { fs.unlinkSync(tmp); } catch {}
+  assert.equal(checked.status, 0, 'inline script syntax failure: ' + (checked.stderr || checked.stdout));
+}
+
+console.log('ai-image-analyzer structural and syntax audit passed');
