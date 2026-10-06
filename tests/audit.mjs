@@ -32,6 +32,8 @@ assert.ok(html.includes('watermarkActions: f.provenance.watermarkActions'), 'JSO
 assert.ok(html.includes('watermarkDeclarations: f.provenance.watermarkDeclarations'), 'JSON export must preserve watermark declarations');
 assert.ok(html.includes('rawHints: f.provenance.rawHints'), 'JSON export must preserve raw provenance hints');
 assert.ok(html.includes('formatAdvancedMetrics'), 'text report must expose advanced detector metrics');
+assert.ok(html.includes('buildAdvancedExport'), 'JSON export must sanitize browser-only advanced artifacts');
+assert.ok(html.includes('dl-heatmap'), 'DiffusionPrint heatmap must have a direct download action');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
