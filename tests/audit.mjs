@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -59,6 +60,7 @@ assert.ok(html.includes('ingredientAiGenerated'), 'audio C2PA must distinguish A
 assert.ok(html.includes("classification: 'AI_DERIVED_DECLARED'"), 'audio summary must report validated AI ingredients separately');
 assert.ok(html.includes('AI-generated ingredient declarations'), 'audio C2PA UI must display ingredient declaration counts');
 assert.ok(html.includes("r.neural?.status !== 'disabled'"), 'intentionally disabled audio neural analysis must not show as an error banner');
+assert.ok(html.includes("typeof window !== 'undefined'"), 'audio module auto-mount must be guarded outside browsers');
 assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
@@ -92,4 +94,22 @@ for (let i = 0; i < scriptTags.length; i++) {
   assert.equal(checked.status, 0, 'inline script syntax failure: ' + (checked.stderr || checked.stdout));
 }
 
-console.log('ai-image-analyzer structural and syntax audit passed');
+const moduleTag = scriptTags.find(([,attrs]) => /type=["']module["']/i.test(attrs));
+assert.ok(moduleTag, 'audio ES module script not found');
+const runtimeModulePath = path.join(os.tmpdir(), 'ai-image-analyzer-audio-runtime-' + process.pid + '.mjs');
+fs.writeFileSync(runtimeModulePath, moduleTag[2]);
+let audioModule;
+try {
+  audioModule = await import(pathToFileURL(runtimeModulePath).href + '?v=' + Date.now());
+} finally {
+  try { fs.unlinkSync(runtimeModulePath); } catch {}
+}
+const adts = Uint8Array.from([0xff,0xf1,0x50,0x80,0x00,0xff,0xfc]);
+assert.equal(audioModule.identifyAudioFormat(adts, 'audio/aac', 'sample.aac').id, 'aac', 'ADTS AAC was misidentified');
+const adtsInfo = audioModule.inspectAudioContainer(adts, { mime:'audio/aac', name:'sample.aac' });
+assert.equal(adtsInfo.format.id, 'aac');
+assert.equal(adtsInfo.audio.sampleRate, 44100);
+assert.equal(adtsInfo.audio.channels, 2);
+assert.equal(audioModule.identifyAudioFormat(Uint8Array.from([0xff,0xfb,0x90,0x64]), 'audio/mpeg', 'sample.mp3').id, 'mp3');
+
+console.log('ai-image-analyzer structural, syntax and audio runtime audit passed');
