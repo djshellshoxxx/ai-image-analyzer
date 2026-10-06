@@ -45,6 +45,7 @@ assert.ok((html.match(/MAX_PREVIEW_PIXELS/g) || []).length > 1, 'MAX_PREVIEW_PIX
 assert.ok(html.includes("m.key === 'jpegfp' ? file : pixelCanvas"), 'JPEG fingerprinting must receive original file bytes rather than a canvas');
 assert.ok(html.includes('ORT_SESSION_CACHE'), 'embedded ONNX helpers must cache inference sessions across scales and batch files');
 assert.ok(html.includes('advancedModelSkipResult'), 'enabled advanced detectors that cannot run must appear explicitly as skipped results');
+assert.ok((html.match(/MAX_PRNU_PIXELS/g) || []).length > 1, 'PRNU must have an explicit browser workload guard');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
