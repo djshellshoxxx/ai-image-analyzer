@@ -3545,12 +3545,14 @@ export default {
 };
 
 
-try {
-  window.audioForensicsApi = mountAudioForensicsUI('#audio-forensics');
-} catch (e) {
-  console.error('Audio forensics module failed to mount:', e);
-  const mountTarget = document.getElementById('audio-forensics');
-  if (mountTarget) mountTarget.innerHTML = `<div style="border:2px solid var(--bad);padding:14px;font-size:12px;color:var(--bad);">Audio module failed to mount: ${String((e && e.message) || e)}</div>`;
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  try {
+    window.audioForensicsApi = mountAudioForensicsUI('#audio-forensics');
+  } catch (e) {
+    console.error('Audio forensics module failed to mount:', e);
+    const mountTarget = document.getElementById('audio-forensics');
+    if (mountTarget) mountTarget.innerHTML = `<div style="border:2px solid var(--bad);padding:14px;font-size:12px;color:var(--bad);">Audio module failed to mount: ${String((e && e.message) || e)}</div>`;
+  }
 }
 </script>
 </body>
