@@ -55,6 +55,8 @@ for (const control of ['data-pa-signal','data-pa-neural','data-pa-c2pa']) {
   assert.ok(html.includes(control), 'audio UI missing configurable analyzer control ' + control);
 }
 assert.ok(html.includes('currentAudioOptions'), 'audio UI controls must feed both file and microphone analysis');
+assert.ok(html.includes('ingredientAiGenerated'), 'audio C2PA must distinguish AI ingredients from active-asset AI declarations');
+assert.ok(html.includes("classification: 'AI_DERIVED_DECLARED'"), 'audio summary must report validated AI ingredients separately');
 assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
