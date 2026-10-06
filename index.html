@@ -258,7 +258,7 @@
       </div>
       <div class="adv-model-card" id="adv-prnu">
         <h4><input type="checkbox" id="m-prnu" title="Classical Photo-Response Non-Uniformity sensor-fingerprint matching. Needs several reference photos from the exact same physical camera, at the exact same pixel dimensions as each analyzed image (no resizing/cropping). A strong match supports 'came from this specific camera'; no match proves nothing on its own."/> PRNU camera sensor fingerprint</h4>
-        <div class="adv-req">No model — but needs same-camera, same-dimension reference photos below.</div>
+        <div class="adv-req">No model — needs same-camera, same-dimension reference photos. Browser PRNU is capped at 4 MP per image to keep correlation work bounded.</div>
         <label>Reference photos (same camera, same dimensions, applied to every batch file)<input type="file" id="prnu-refs" accept="image/*" multiple></label>
       </div>
       <div class="adv-checklist-link">Module citations and fidelity notes: <code>forensics/README.md</code> · full status: <code>forensics/IMPLEMENTATION-CHECKLIST.md</code></div>
@@ -366,6 +366,7 @@ const UTIF_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js';
 const C2PA_BMFF_UUID = new Uint8Array([0xD8,0xFE,0xC3,0xD6,0x1B,0x0E,0x48,0x3C,0x92,0x97,0x58,0x28,0x87,0x7E,0xC4,0x81]);
 const C2PA_TIFF_TAG = 0xCD41;
 const MAX_NEURAL_PIXELS = 120_000_000;
+const MAX_PRNU_PIXELS = 4_000_000;
 
 const DST = Object.freeze({
   AI_GENERATED: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
@@ -1700,9 +1701,16 @@ async function analyzeOneFile(file, cfg, statusCb) {
     catch(e){ f.advanced.model.push({id:'editprint',name:'Editprint Processing-History Fingerprint',status:'error',error:String(e?.message||e)}); }
   }
   if (cfg.advModel.prnu.on && cfg.advModel.prnu.refFiles.length && pixelCanvas) {
-    statusCb?.('Running PRNU…'); const forensics = await getForensics();
-    try { const fingerprint = await forensics.prnu.estimateFingerprint(cfg.advModel.prnu.refFiles); const r = await forensics.prnu.analyze(advInput,{fingerprint}); f.advanced.model.push(r); }
-    catch(e){ f.advanced.model.push({id:'prnu',name:'PRNU Sensor Fingerprint',status:'error',error:String(e?.message||e)}); }
+    const prnuPixels = pixelCanvas.width * pixelCanvas.height;
+    if (prnuPixels > MAX_PRNU_PIXELS) {
+      const msg = `PRNU skipped: ${prnuPixels.toLocaleString()} analysis pixels exceeds the browser PRNU limit of ${MAX_PRNU_PIXELS.toLocaleString()}. Use matched uncropped images at 4 MP or less, or matched crops with identical geometry.`;
+      addWarning(f, msg);
+      advancedModelSkipResult(f,'prnu','PRNU Sensor Fingerprint',msg,'skipped-large-image');
+    } else {
+      statusCb?.('Running PRNU…'); const forensics = await getForensics();
+      try { const fingerprint = await forensics.prnu.estimateFingerprint(cfg.advModel.prnu.refFiles); const r = await forensics.prnu.analyze(advInput,{fingerprint}); f.advanced.model.push(r); }
+      catch(e){ f.advanced.model.push({id:'prnu',name:'PRNU Sensor Fingerprint',status:'error',error:String(e?.message||e)}); }
+    }
   }
 
   const verdict = evaluateVerdict(f);
