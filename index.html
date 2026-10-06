@@ -1353,7 +1353,7 @@ function analyzeManifestStore(store,f){
   ingredients.forEach((ing,i)=>{
     const prefix=`Ingredient ${i+1}`;
     pushUniquePair(f.c2pa,`${prefix} title`,ing.title || '(untitled)');
-    if(ing.active_manifest){ const m=store.manifests[ing.active_manifest]; if(m){ for(const a of getManifestActions(m)){ if(!a.digitalSourceType)continue; const cls=classifyDst(a.digitalSourceType); if((cls==='ai_generated'||cls==='ai_edited') && authenticated) addEvidence(f,{type:'C2PA_AI_INGREDIENT',strength:'strong',authenticated:true,classification:'ai_derived',label:'Validated provenance chain contains AI-origin ingredient',value:`${ing.relationship||'componentOf'} · ${a.digitalSourceType}`,source:`${prefix} · overall ${state}`}); } } }
+    if(ing.active_manifest){ const m=store.manifests[ing.active_manifest]; if(m){ for(const a of getManifestActions(m)){ if(!a.digitalSourceType)continue; if(!f.provenance.ingredientSourceTypes.includes(a.digitalSourceType)) f.provenance.ingredientSourceTypes.push(a.digitalSourceType); const cls=classifyDst(a.digitalSourceType); if((cls==='ai_generated'||cls==='ai_edited') && authenticated) addEvidence(f,{type:'C2PA_AI_INGREDIENT',strength:'strong',authenticated:true,classification:'ai_derived',label:'Validated provenance chain contains AI-origin ingredient',value:`${ing.relationship||'componentOf'} · ${a.digitalSourceType}`,source:`${prefix} · overall ${state}`}); } } }
   });
   if(state==='Invalid') addEvidence(f,{type:'C2PA_INVALID',strength:'invalid',authenticated:false,classification:'provenance_invalid',label:'C2PA validation failed',value:'Errors were found in the manifest store.',source:'Official C2PA validator'});
 }
@@ -1658,9 +1658,43 @@ function buildExport(result) {
     dimensions, video: videoInfo, verdict,
     evidence: f.evidence, neural: f.neural, watermarks: f.watermarks,
     circumstantial: f.circumstantial, advanced: f.advanced,
-    provenance: { validationState: f.provenance.validationState, activeManifest: f.provenance.activeManifest, containerDetected: f.provenance.containerDetected },
+    provenance: {
+      validationState: f.provenance.validationState,
+      activeManifest: f.provenance.activeManifest,
+      containerDetected: f.provenance.containerDetected,
+      referenceDetected: f.provenance.referenceDetected,
+      sdkAttempted: f.provenance.sdkAttempted,
+      sdkLoaded: f.provenance.sdkLoaded,
+      activeSourceTypes: f.provenance.activeSourceTypes,
+      ingredientSourceTypes: f.provenance.ingredientSourceTypes,
+      watermarkActions: f.provenance.watermarkActions,
+      watermarkDeclarations: f.provenance.watermarkDeclarations,
+      rawHints: f.provenance.rawHints
+    },
     c2pa: f.c2pa, validation: f.validation, exif: f.exif, iptc: f.iptc, text: f.text, structure: f.struct, warnings: f.warnings
   };
+}
+function compactMetricValue(value, depth=0) {
+  if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (depth >= 4) return '[nested value omitted]';
+  if (ArrayBuffer.isView(value)) return `[${value.constructor?.name || 'TypedArray'} len=${value.length ?? value.byteLength ?? 0}]`;
+  if (Array.isArray(value)) {
+    if (value.length > 20) return `[Array len=${value.length}; first 10 shown] ${safeJson(value.slice(0,10))}`;
+    return value.map(v => compactMetricValue(v, depth+1));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [k,v] of Object.entries(value)) {
+      if (k === 'patchResults' && Array.isArray(v)) { out[k] = `[Array len=${v.length}; omitted from text report]`; continue; }
+      out[k] = compactMetricValue(v, depth+1);
+    }
+    return out;
+  }
+  return String(value);
+}
+function formatAdvancedMetrics(metrics) {
+  if (!metrics || typeof metrics !== 'object' || !Object.keys(metrics).length) return '';
+  return shortText(safeJson(compactMetricValue(metrics), true), 8000);
 }
 function buildTextReport(j) {
   const lines = [];
@@ -1683,7 +1717,11 @@ function buildTextReport(j) {
   if (!j.circumstantial?.length) lines.push('(none)'); else for (const [k,v] of j.circumstantial) lines.push(`${k}: ${v}`);
   lines.push('');
   lines.push('== ADVANCED SIGNAL MODULES (uncalibrated unless noted) ==');
-  for (const r of [...(j.advanced?.auto||[]), ...(j.advanced?.model||[])]) lines.push(`${r.name || r.id}: ${r.status==='error'?('ERROR — '+r.error):(r.summary||'(no summary)')}`);
+  for (const r of [...(j.advanced?.auto||[]), ...(j.advanced?.model||[])]) {
+    lines.push(`${r.name || r.id}: ${r.status==='error'?('ERROR — '+r.error):(r.summary||'(no summary)')}`);
+    const metrics = formatAdvancedMetrics(r.metrics);
+    if (metrics) lines.push('  metrics: ' + metrics.replace(/\n/g, '\n  '));
+  }
   lines.push('');
   const sec = (title, arr) => { lines.push('== ' + title + ' =='); if (!arr.length) lines.push('(none)'); for (const [k,v] of arr) lines.push(`${k}: ${v}`); lines.push(''); };
   sec('C2PA', j.c2pa); sec('C2PA VALIDATION', j.validation); sec('EXIF', j.exif); sec('IPTC', j.iptc); sec('TEXT / XMP', j.text); sec('FILE STRUCTURE', j.structure);
