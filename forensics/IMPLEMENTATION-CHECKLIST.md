@@ -13,7 +13,7 @@ Status reflects the browser application on the audit branch dated 2026-10-05.
 - [x] JPEG XL container inspection
 - [x] MP4 ISO-BMFF inspection and video-frame sampling
 - [x] WebM format identification and frame sampling
-- [x] TIFF-based RAW metadata parsing
+- [x] TIFF-based RAW metadata parsing, including exposed CR2/NEF/ARW/DNG/ORF/RW2/PEF/SRW intake
 - [x] Batch processing, per-file JSON/text export, batch JSON and CSV export
 
 ## Pixel and watermark analysis
@@ -34,6 +34,12 @@ Status reflects the browser application on the audit branch dated 2026-10-05.
 - [x] Gaussian embedding extraction
 - [x] Editprint embedding extraction
 - [x] Explicit warnings when an enabled detector is missing its required model URL or reference files
+- [x] Explicit skipped-result cards when an enabled advanced detector cannot execute
+- [x] Original-byte input for JPEG encoder fingerprinting
+- [x] Shared ONNX session cache across files/scales
+- [x] Bounded raster-analysis canvases for very large media
+- [x] Browser PRNU workload guard
+- [x] Direct official C2PA SDK attempts on supported formats, including DNG
 
 ## Audio / voice
 - [x] File upload and drag/drop
