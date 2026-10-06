@@ -1649,6 +1649,40 @@ function imageDataToDataUrl(imageData) {
 }
 
 /* ---------------- Export builders ---------------- */
+function jsonSafeArtifact(value, maxItems=4096) {
+  if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof ImageData !== 'undefined' && value instanceof ImageData)
+    return { type:'ImageData', width:value.width, height:value.height, omittedFromJson:true, note:'Use the heatmap download action for the PNG artifact.' };
+  if (ArrayBuffer.isView(value)) {
+    const len = value.length ?? value.byteLength ?? 0;
+    if (len <= maxItems) return Array.from(value);
+    return { type:value.constructor?.name || 'TypedArray', length:len, omittedFromJson:true };
+  }
+  if (Array.isArray(value)) {
+    if (value.length > maxItems) return { type:'Array', length:value.length, omittedFromJson:true };
+    return value.map(v => jsonSafeArtifact(v, maxItems));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [k,v] of Object.entries(value)) out[k] = jsonSafeArtifact(v, maxItems);
+    return out;
+  }
+  return String(value);
+}
+function buildAdvancedExport(advanced) {
+  const mapResult = r => {
+    const out = {};
+    for (const [k,v] of Object.entries(r || {})) {
+      if (k === 'ui') continue;
+      out[k] = k === 'artifacts' ? jsonSafeArtifact(v) : v;
+    }
+    return out;
+  };
+  return {
+    auto: (advanced?.auto || []).map(mapResult),
+    model: (advanced?.model || []).map(mapResult)
+  };
+}
 function buildExport(result) {
   const { file, format, dimensions, verdict, f, videoInfo } = result;
   return {
@@ -1657,7 +1691,7 @@ function buildExport(result) {
     format: { id: format.id, name: format.name, mime: format.mime || null },
     dimensions, video: videoInfo, verdict,
     evidence: f.evidence, neural: f.neural, watermarks: f.watermarks,
-    circumstantial: f.circumstantial, advanced: f.advanced,
+    circumstantial: f.circumstantial, advanced: buildAdvancedExport(f.advanced),
     provenance: {
       validationState: f.provenance.validationState,
       activeManifest: f.provenance.activeManifest,
@@ -1734,6 +1768,13 @@ function downloadBlob(name, type, contents) {
   const a = document.createElement('a'); a.href = url; a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function downloadDataUrl(name, dataUrl) {
+  if (!dataUrl) return;
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = name;
+  a.click();
+}
 function csvCell(v) { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }
 function buildCsv(results) {
   const headers = ['File','Format','Verdict','Confidence','C2PA State','Neural Fake % (canonical)','Neural Fake % (mean)','Evidence Count','Warning Count','SHA-256'];
@@ -1773,6 +1814,8 @@ function advancedMiniGrid(f) {
 function buildFileCard(result, idx) {
   const { file, format, verdict, f } = result;
   const j = buildExport(result);
+  const heatmapAvailable = (f.advanced?.model || []).some(r => r.ui?.heatmapDataUrl);
+  const heatmapButton = heatmapAvailable ? `<button data-action="dl-heatmap" data-idx="${idx}">Download heatmap PNG</button>` : '';
   const warnNote = f.warnings.length ? `<div class="file-warn-note">${f.warnings.length} warning(s) — see full report</div>` : '';
   return `
   <div class="file-card" id="file-card-${idx}">
@@ -1787,6 +1830,7 @@ function buildFileCard(result, idx) {
     <div class="file-actions">
       <button data-action="dl-json" data-idx="${idx}">Download JSON</button>
       <button data-action="dl-txt" data-idx="${idx}">Download report (.txt)</button>
+      ${heatmapButton}
     </div>
     <details><summary>Full report (all fields)</summary><pre>${esc(buildTextReport(j))}</pre></details>
   </div>`;
@@ -1809,7 +1853,11 @@ function renderBatch(results) {
       const idx = Number(btn.dataset.idx), r = batchResults[idx], j = buildExport(r);
       const base = (r.file.name || 'file').replace(/\.[^.]+$/, '');
       if (btn.dataset.action === 'dl-json') downloadBlob(`${base}.provenance.json`, 'application/json', JSON.stringify(j, null, 2));
-      else downloadBlob(`${base}.provenance.txt`, 'text/plain', buildTextReport(j));
+      else if (btn.dataset.action === 'dl-txt') downloadBlob(`${base}.provenance.txt`, 'text/plain', buildTextReport(j));
+      else if (btn.dataset.action === 'dl-heatmap') {
+        const heatmapUrl = (r.f.advanced?.model || []).find(x => x.ui?.heatmapDataUrl)?.ui?.heatmapDataUrl;
+        downloadDataUrl(`${base}.diffusionprint-heatmap.png`, heatmapUrl);
+      }
     });
   });
   const aiCount = results.filter(r => r.verdict.className === 'ai').length;
