@@ -1361,7 +1361,7 @@ async function validateC2PA(file,f){
   }finally{ try{ if(reader) await reader.free(); }catch{} }
 }
 function guessMimeFromName(name=''){
-  if(/\.png$/i.test(name))return'image/png'; if(/\.webp$/i.test(name))return'image/webp'; if(/\.avif$/i.test(name))return'image/avif'; if(/\.hei[cf]$/i.test(name))return'image/heic'; if(/\.tiff?$/i.test(name))return'image/tiff';
+  if(/\.png$/i.test(name))return'image/png'; if(/\.webp$/i.test(name))return'image/webp'; if(/\.avif$/i.test(name))return'image/avif'; if(/\.hei[cf]$/i.test(name))return'image/heic'; if(/\.tiff?$/i.test(name))return'image/tiff'; if(/\.dng$/i.test(name))return'image/x-adobe-dng';
   if(/\.gif$/i.test(name))return'image/gif'; if(/\.bmp$/i.test(name))return'image/bmp'; if(/\.svg$/i.test(name))return'image/svg+xml'; if(/\.jxl$/i.test(name))return'image/jxl';
   if(/\.mp4$|\.m4v$/i.test(name))return'video/mp4'; if(/\.webm$|\.mkv$/i.test(name))return'video/webm';
   return'image/jpeg';
