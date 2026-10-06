@@ -42,6 +42,7 @@ assert.ok(html.includes('analysisConfig: f.analysisConfig'), 'JSON export must p
 assert.ok(html.includes('runtime: {'), 'JSON export must identify important runtime/dependency versions');
 assert.ok(html.includes('boundedAnalysisSize'), 'pixel decoding must enforce the declared canvas pixel limit');
 assert.ok((html.match(/MAX_PREVIEW_PIXELS/g) || []).length > 1, 'MAX_PREVIEW_PIXELS must be used, not only declared');
+assert.ok(html.includes("m.key === 'jpegfp' ? file : pixelCanvas"), 'JPEG fingerprinting must receive original file bytes rather than a canvas');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
