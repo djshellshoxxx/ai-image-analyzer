@@ -3368,6 +3368,11 @@ export function mountAudioForensicsUI(target, options = {}) {
     <div class="pa-grid">
       <div class="pa-box">
         <label class="pa-drop" data-pa-drop><b>Upload or drop audio</b><br><span class="pa-note">WAV · MP3 · M4A/AAC · MP4 audio · FLAC · Ogg/Opus · WebM · AIFF (browser decode support varies)</span><input data-pa-file type="file" accept="audio/*,.wav,.mp3,.m4a,.mp4,.aac,.flac,.ogg,.opus,.webm,.aiff,.aif"></label>
+        <div class="pa-options">
+          <label><input type="checkbox" data-pa-signal checked> Signal measurements</label>
+          <label><input type="checkbox" data-pa-neural checked> AASIST-L neural detector</label>
+          <label><input type="checkbox" data-pa-c2pa checked> C2PA validation</label>
+        </div>
         <audio data-pa-player controls hidden></audio>
       </div>
       <div class="pa-box">
@@ -3383,8 +3388,15 @@ export function mountAudioForensicsUI(target, options = {}) {
   const q = sel => root.querySelector(sel);
   const drop = q('[data-pa-drop]'), fileInput = q('[data-pa-file]'), status = q('[data-pa-status]'), resultEl = q('[data-pa-result]'), player = q('[data-pa-player]');
   const startBtn = q('[data-pa-start]'), stopBtn = q('[data-pa-stop]'), jsonBtn = q('[data-pa-json]'), csvBtn = q('[data-pa-csv]');
+  const signalToggle = q('[data-pa-signal]'), neuralToggle = q('[data-pa-neural]'), c2paToggle = q('[data-pa-c2pa]');
   let monitor = null, lastResult = null, objectUrl = null, destroyed = false;
 
+  const currentAudioOptions = () => ({
+    ...opts,
+    signal: { ...opts.signal, enabled: !!signalToggle?.checked },
+    neural: { ...opts.neural, enabled: !!neuralToggle?.checked },
+    c2pa: { ...opts.c2pa, enabled: !!c2paToggle?.checked }
+  });
   const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle('live', live); };
   const setPlayer = blob => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -3400,7 +3412,7 @@ export function mountAudioForensicsUI(target, options = {}) {
     if (!blob?.size || destroyed) return null;
     setPlayer(blob); setStatus(`Analyzing ${blob.name || 'recording'}…`);
     try {
-      const r = await analyze(blob, { ...opts, statusCb: msg => { if (!destroyed) setStatus(msg); } });
+      const r = await analyze(blob, { ...currentAudioOptions(), statusCb: msg => { if (!destroyed) setStatus(msg); } });
       if (!destroyed) {
         showResult(r);
         const bits = [`Analysis complete — ${r.neural?.status === 'ok' ? 'AASIST-L ran' : `neural: ${r.neural?.status || 'skipped'}`}, ${r.c2pa?.status === 'ok' ? 'C2PA checked' : `C2PA: ${r.c2pa?.status || 'skipped'}`}`];
@@ -3420,7 +3432,7 @@ export function mountAudioForensicsUI(target, options = {}) {
   startBtn.addEventListener('click', async () => {
     startBtn.disabled = true; setStatus('Requesting microphone permission…', true);
     try {
-      monitor = new LiveAudioMonitor(opts);
+      monitor = new LiveAudioMonitor(currentAudioOptions());
       await monitor.start({
         onState: s => { if (s.state === 'started') { stopBtn.disabled = false; setStatus(`Listening live at ${s.sampleRate} Hz…`, true); } },
         onUpdate: r => { showResult(r); setStatus(`Listening live · ${num(r.source.elapsedSeconds || 0, 1, 's')} elapsed`, true); },
