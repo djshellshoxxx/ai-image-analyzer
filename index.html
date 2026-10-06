@@ -1073,6 +1073,23 @@ function parseRAW(buf, f, format) {
 }
 
 /* ---------------- Pixel decoding ---------------- */
+function boundedAnalysisSize(width,height,maxPixels=MAX_PREVIEW_PIXELS){
+  width=Math.max(1,Math.floor(Number(width)||1)); height=Math.max(1,Math.floor(Number(height)||1));
+  const pixels=width*height;
+  if(pixels<=maxPixels)return {width,height,sourceWidth:width,sourceHeight:height,scaled:false,scale:1};
+  const scale=Math.sqrt(maxPixels/pixels);
+  return {
+    width:Math.max(1,Math.floor(width*scale)),
+    height:Math.max(1,Math.floor(height*scale)),
+    sourceWidth:width,sourceHeight:height,scaled:true,scale
+  };
+}
+function drawBoundedCanvas(drawable,width,height){
+  const size=boundedAnalysisSize(width,height);
+  const c=document.createElement('canvas'); c.width=size.width; c.height=size.height;
+  c.getContext('2d',{willReadFrequently:true}).drawImage(drawable,0,0,size.width,size.height);
+  return {canvas:c,...size};
+}
 async function decodePixelCanvas(file,ab,format,f){
   if (format.id === 'raw') return null; // beta: no in-browser RAW decode
   if (format.id === 'webm') return null; // handled separately via video frame sampling
@@ -1080,7 +1097,9 @@ async function decodePixelCanvas(file,ab,format,f){
   try{
     if(typeof createImageBitmap==='function'){
       const bmp=await createImageBitmap(file);
-      const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d',{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close?.();return c;
+      const decoded=drawBoundedCanvas(bmp,bmp.width,bmp.height);
+      bmp.close?.();
+      return decoded;
     }
   }catch(e){
     if (format.id === 'jxl') { addWarning(f, `JPEG XL pixel decode failed in this browser (${e?.message||e}). Native JXL decode support is inconsistent across browsers as of this build; pixel-based modules are skipped for this file.`); return null; }
@@ -1095,19 +1114,39 @@ async function decodePixelCanvas(file,ab,format,f){
   }
 }
 async function decodeViaImageElement(file){
-  const url=URL.createObjectURL(file);try{return await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth||1;c.height=im.naturalHeight||1;c.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0);resolve(c);};im.onerror=()=>reject(new Error('browser image decoder rejected file'));im.src=url;});}finally{URL.revokeObjectURL(url);}
+  const url=URL.createObjectURL(file);
+  try{
+    return await new Promise((resolve,reject)=>{
+      const im=new Image();
+      im.onload=()=>resolve(drawBoundedCanvas(im,im.naturalWidth||1,im.naturalHeight||1));
+      im.onerror=()=>reject(new Error('browser image decoder rejected file'));
+      im.src=url;
+    });
+  }finally{URL.revokeObjectURL(url);}
 }
 let libheifPromise=null, utifPromise=null;
 async function getLibheif(){ if(!libheifPromise)libheifPromise=import(LIBHEIF_MODULE_URL).then(m=>m.default||m);return libheifPromise; }
 async function decodeHeifWithLibheif(ab,f){
   const libheif=await getLibheif(); const decoder=new libheif.HeifDecoder(); const imgs=decoder.decode(new Uint8Array(ab)); if(!imgs?.length)throw new Error('libheif found no decodable image item');
-  const image=imgs[0],w=image.get_width(),h=image.get_height(); const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});const id=ctx.createImageData(w,h);
-  await new Promise((resolve,reject)=>image.display(id,d=>d?resolve():reject(new Error('libheif display failed')))); ctx.putImageData(id,0,0); pushUniquePair(f.struct,'Pixel decoder','libheif-js 1.19.8 fallback'); return c;
+  const image=imgs[0],w=image.get_width(),h=image.get_height(),size=boundedAnalysisSize(w,h);
+  if(size.scaled){
+    addWarning(f,`HEIF/AVIF source is ${w} × ${h} (${(w*h).toLocaleString()} pixels), above the ${MAX_PREVIEW_PIXELS.toLocaleString()}-pixel analysis-canvas limit. Pixel analysis was skipped to avoid allocating a full-resolution libheif RGBA buffer; metadata/C2PA results are still valid.`);
+    return {canvas:null,...size,skipped:true};
+  }
+  const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});const id=ctx.createImageData(w,h);
+  await new Promise((resolve,reject)=>image.display(id,d=>d?resolve():reject(new Error('libheif display failed')))); ctx.putImageData(id,0,0); pushUniquePair(f.struct,'Pixel decoder','libheif-js 1.19.8 fallback'); return {canvas:c,...size};
 }
 async function loadScript(url,globalName){ if(globalName&&globalThis[globalName])return globalThis[globalName]; await new Promise((resolve,reject)=>{const sc=document.createElement('script');sc.src=url;sc.crossOrigin='anonymous';sc.onload=resolve;sc.onerror=()=>reject(new Error('Could not load '+url));document.head.appendChild(sc);}); return globalName?globalThis[globalName]:true; }
 async function getUTIF(){ if(!utifPromise)utifPromise=loadScript(UTIF_SCRIPT_URL,'UTIF');return utifPromise; }
 async function decodeTiffWithUTIF(ab,f){
-  const UTIF=await getUTIF();const ifds=UTIF.decode(ab);if(!ifds?.length)throw new Error('UTIF found no IFD');UTIF.decodeImage(ab,ifds[0]);const rgba=UTIF.toRGBA8(ifds[0]);const w=ifds[0].width,h=ifds[0].height;if(!w||!h)throw new Error('TIFF pixel dimensions unavailable');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba),w,h),0,0);pushUniquePair(f.struct,'Pixel decoder','UTIF.js 3.1.0 fallback');return c;
+  const UTIF=await getUTIF();const ifds=UTIF.decode(ab);if(!ifds?.length)throw new Error('UTIF found no IFD');
+  const w=ifds[0].width,h=ifds[0].height;if(!w||!h)throw new Error('TIFF pixel dimensions unavailable');
+  const size=boundedAnalysisSize(w,h);
+  if(size.scaled){
+    addWarning(f,`TIFF source is ${w} × ${h} (${(w*h).toLocaleString()} pixels), above the ${MAX_PREVIEW_PIXELS.toLocaleString()}-pixel analysis-canvas limit. Pixel analysis was skipped before UTIF expanded the full raster; metadata results are still valid.`);
+    return {canvas:null,...size,skipped:true};
+  }
+  UTIF.decodeImage(ab,ifds[0]);const rgba=UTIF.toRGBA8(ifds[0]);const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba),w,h),0,0);pushUniquePair(f.struct,'Pixel decoder','UTIF.js 3.1.0 fallback');return {canvas:c,...size};
 }
 
 /* ---------------- Video frame sampling (new, for MP4/WebM) ---------------- */
@@ -1125,18 +1164,17 @@ async function decodeVideoFrames(file, fractions=[0.15,0.5,0.85]) {
     if (!Number.isFinite(duration) || duration <= 0) {
       // Live/streamed or unknown-duration media — just grab whatever frame is current.
       await new Promise(r => { video.currentTime = 0; video.onseeked = r; });
-      const c = document.createElement('canvas'); c.width = video.videoWidth||1; c.height = video.videoHeight||1;
-      c.getContext('2d',{willReadFrequently:true}).drawImage(video,0,0);
-      return { canvases: [c], duration: null, width: video.videoWidth, height: video.videoHeight };
+      const frame = drawBoundedCanvas(video,video.videoWidth||1,video.videoHeight||1);
+      return { canvases: [frame.canvas], duration: null, width: video.videoWidth, height: video.videoHeight, analysisWidth:frame.width, analysisHeight:frame.height, scaled:frame.scaled };
     }
     for (const frac of fractions) {
       const t = Math.min(Math.max(duration*frac, 0), Math.max(0, duration - 0.05));
       await new Promise((resolve) => { video.onseeked = resolve; video.currentTime = t; });
-      const c = document.createElement('canvas'); c.width = video.videoWidth||1; c.height = video.videoHeight||1;
-      c.getContext('2d',{willReadFrequently:true}).drawImage(video,0,0);
-      canvases.push(c);
+      const frame = drawBoundedCanvas(video,video.videoWidth||1,video.videoHeight||1);
+      canvases.push(frame.canvas);
     }
-    return { canvases, duration, width: video.videoWidth, height: video.videoHeight };
+    const bounded=boundedAnalysisSize(video.videoWidth||1,video.videoHeight||1);
+    return { canvases, duration, width: video.videoWidth, height: video.videoHeight, analysisWidth:bounded.width, analysisHeight:bounded.height, scaled:bounded.scaled };
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -1565,14 +1603,23 @@ async function analyzeOneFile(file, cfg, statusCb) {
       if (videoInfo.width && videoInfo.height) { dimensions = {width:videoInfo.width, height:videoInfo.height}; f.struct.push(['Video dimensions', `${videoInfo.width} × ${videoInfo.height} px`]); }
       if (videoInfo.duration != null) f.struct.push(['Video duration', `${videoInfo.duration.toFixed(2)} s`]);
       f.struct.push(['Frames sampled for pixel analysis', String(videoInfo.canvases.length)]);
+      if (videoInfo.scaled) {
+        f.struct.push(['Video analysis canvas', `${videoInfo.analysisWidth} × ${videoInfo.analysisHeight} px per sampled frame (bounded from original)`]);
+        addWarning(f, 'Video frames were downscaled for pixel analysis because the native frame dimensions exceed the analysis-canvas pixel limit.');
+      }
     } catch (e) { addWarning(f, `Video frame sampling failed: ${e?.message || e}`); }
   } else if (format.id !== 'raw') {
     statusCb?.('Decoding pixels…');
     try {
-      pixelCanvas = await decodePixelCanvas(file, ab, format, f);
-      if (pixelCanvas) {
-        dimensions = {width: pixelCanvas.width, height: pixelCanvas.height};
-        f.struct.push(['Dimensions', `${pixelCanvas.width} × ${pixelCanvas.height} px`]);
+      const decoded = await decodePixelCanvas(file, ab, format, f);
+      if (decoded) {
+        pixelCanvas = decoded.canvas || null;
+        dimensions = {width: decoded.sourceWidth, height: decoded.sourceHeight};
+        f.struct.push(['Dimensions', `${decoded.sourceWidth} × ${decoded.sourceHeight} px`]);
+        if (decoded.scaled && pixelCanvas) {
+          f.struct.push(['Pixel analysis canvas', `${decoded.width} × ${decoded.height} px (bounded from original)`]);
+          addWarning(f, `Pixel analysis uses a bounded ${decoded.width} × ${decoded.height} canvas instead of the ${decoded.sourceWidth} × ${decoded.sourceHeight} source. Scale-sensitive forensic measurements should be interpreted cautiously.`);
+        }
       }
     } catch (e) { addWarning(f, 'Pixel decoder could not produce an RGB canvas: ' + (e?.message || e)); }
   }
