@@ -3352,12 +3352,13 @@ function renderResultHtml(r) {
   const warningHtml = (r.warnings || []).map(w => `<div class="pa-finding pa-warn">${esc(w)}</div>`).join('') || '<div class="pa-note">None</div>';
   const hasWarnings = !!(r.warnings || []).length;
   const bannerBits = [];
-  if (r.neural?.status !== 'ok') bannerBits.push(`neural anti-spoofing did not run (${esc(r.neural?.status || 'unknown')}${r.neural?.error ? ': ' + esc(r.neural.error) : ''})`);
+  if (r.neural?.status !== 'ok' && r.neural?.status !== 'disabled') bannerBits.push(`neural anti-spoofing did not run (${esc(r.neural?.status || 'unknown')}${r.neural?.error ? ': ' + esc(r.neural.error) : ''})`);
   if (r.c2pa?.status !== 'ok' && r.c2pa?.status !== 'disabled') bannerBits.push(`C2PA validation did not run (${esc(r.c2pa?.status || 'unknown')}${r.c2pa?.error ? ': ' + esc(r.c2pa.error) : ''})`);
-  const banner = bannerBits.length ? `<div class="pa-finding pa-warn" style="border:1px solid var(--pa-warn);padding:9px 11px;margin-bottom:10px;">⚠ ${bannerBits.join(' · ')} — no model download was attempted for the step(s) above. See "Warnings" below for the full detail.</div>` : '';
+  const banner = bannerBits.length ? `<div class="pa-finding pa-warn" style="border:1px solid var(--pa-warn);padding:9px 11px;margin-bottom:10px;">⚠ ${bannerBits.join(' · ')}. Unavailable steps were not used as evidence; see "Warnings" below for details.</div>` : '';
   const c2paRows = c2pa.status === 'ok' ? [
     ['Validation state', c2pa.validationState], ['Active manifest', c2pa.activeManifest || '(none)'],
     ['AI-generated declarations', String(c2pa.aiGenerated?.length || 0)], ['AI-edit declarations', String(c2pa.aiEdited?.length || 0)],
+    ['AI-generated ingredient declarations', String(c2pa.ingredientAiGenerated?.length || 0)], ['AI-edited ingredient declarations', String(c2pa.ingredientAiEdited?.length || 0)],
     ['Digital-capture declarations', String(c2pa.digitalCapture?.length || 0)], ['Watermark declarations', String(c2pa.watermarkDeclarations?.length || 0)]
   ] : [['C2PA', c2pa.error || c2pa.status || 'not run']];
   return `
