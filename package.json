@@ -1,1 +1,8 @@
-{\n  "name": "ai-image-analyzer",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "test": "node tests/audit.mjs"\n  }\n}\n
+{
+  "name": "ai-image-analyzer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/audit.mjs"
+  }
+}
