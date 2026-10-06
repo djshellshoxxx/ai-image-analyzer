@@ -37,6 +37,9 @@ assert.ok(html.includes('rawHints: f.provenance.rawHints'), 'JSON export must pr
 assert.ok(html.includes('formatAdvancedMetrics'), 'text report must expose advanced detector metrics');
 assert.ok(html.includes('buildAdvancedExport'), 'JSON export must sanitize browser-only advanced artifacts');
 assert.ok(html.includes('dl-heatmap'), 'DiffusionPrint heatmap must have a direct download action');
+assert.ok(html.includes('summarizeMethodConfig'), 'exports must include a sanitized analysis configuration snapshot');
+assert.ok(html.includes('analysisConfig: f.analysisConfig'), 'JSON export must preserve analysis configuration');
+assert.ok(html.includes('runtime: {'), 'JSON export must identify important runtime/dependency versions');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
