@@ -40,6 +40,8 @@ assert.ok(html.includes('dl-heatmap'), 'DiffusionPrint heatmap must have a direc
 assert.ok(html.includes('summarizeMethodConfig'), 'exports must include a sanitized analysis configuration snapshot');
 assert.ok(html.includes('analysisConfig: f.analysisConfig'), 'JSON export must preserve analysis configuration');
 assert.ok(html.includes('runtime: {'), 'JSON export must identify important runtime/dependency versions');
+assert.ok(html.includes('boundedAnalysisSize'), 'pixel decoding must enforce the declared canvas pixel limit');
+assert.ok((html.match(/MAX_PREVIEW_PIXELS/g) || []).length > 1, 'MAX_PREVIEW_PIXELS must be used, not only declared');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
