@@ -51,6 +51,10 @@ assert.ok(html.includes('.srw'), 'Samsung SRW parser support must be exposed by 
 assert.ok(html.includes('audio/*,.wav,.mp3,.m4a,.mp4,.aac'), 'audio MP4 support must be exposed by the dedicated audio picker');
 assert.ok(html.includes("id: 'aac', name: 'AAC / ADTS'"), 'raw ADTS AAC must be identified before generic MPEG audio sync');
 assert.ok(html.includes('function parseAdts'), 'raw ADTS AAC must expose basic stream metadata');
+for (const control of ['data-pa-signal','data-pa-neural','data-pa-c2pa']) {
+  assert.ok(html.includes(control), 'audio UI missing configurable analyzer control ' + control);
+}
+assert.ok(html.includes('currentAudioOptions'), 'audio UI controls must feed both file and microphone analysis');
 assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
