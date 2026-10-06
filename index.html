@@ -1340,6 +1340,10 @@ async function getC2paSdk(){
   if(!c2paSdkPromise){ c2paSdkPromise=(async()=>{ const mod=await import(C2PA_MODULE_URL); if(typeof mod.createC2pa!=='function') throw new Error('createC2pa export not found'); return await mod.createC2pa({wasmSrc:C2PA_WASM_URL}); })(); }
   return c2paSdkPromise;
 }
+function c2paSdkShouldAttempt(format){
+  return ['jpeg','png','webp','gif','svg','jxl','heif','avif','tiff','mp4'].includes(format?.id)
+    || (format?.id==='raw' && format?.rawKind==='dng');
+}
 async function validateC2PA(file,f){
   f.provenance.sdkAttempted=true; let reader=null;
   try{
@@ -1626,10 +1630,16 @@ async function analyzeOneFile(file, cfg, statusCb) {
   }
   if (!dimensions && format.id !== 'raw' && format.id !== 'webm' && format.id !== 'mp4') addWarning(f, 'Could not decode dimensions or pixels for this file; metadata results (if any) are still shown.');
 
-  if (cfg.c2pa && (f.provenance.containerDetected || f.provenance.referenceDetected)) {
-    statusCb?.('Validating C2PA…'); await validateC2PA(file, f);
-  } else if (!cfg.c2pa) f.c2pa.push(['C2PA', 'Skipped — C2PA validation was unchecked']);
-  else f.c2pa.push(['C2PA', 'No embedded container or provenance reference detected by the raw parser']);
+  if (cfg.c2pa && c2paSdkShouldAttempt(format)) {
+    statusCb?.('Validating C2PA…');
+    await validateC2PA(file, f);
+    if (!f.provenance.validationState && !f.provenance.activeManifest && !f.provenance.containerDetected && !f.provenance.referenceDetected)
+      pushUniquePair(f.c2pa,'C2PA','Official SDK was attempted; no validated manifest or raw provenance hint was found.');
+  } else if (!cfg.c2pa) {
+    f.c2pa.push(['C2PA', 'Skipped — C2PA validation was unchecked']);
+  } else {
+    f.c2pa.push(['C2PA', `Official SDK validation skipped for unsupported/unintegrated format: ${format.name}`]);
+  }
 
   registerVendorWatermarkCapabilities(f);
   if (cfg.circ) runCircumstantialModules(f, file, dimensions);
