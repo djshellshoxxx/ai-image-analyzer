@@ -1467,6 +1467,45 @@ function getMethodConfig() {
     }
   };
 }
+function summarizeMethodConfig(cfg) {
+  return {
+    c2pa: !!cfg.c2pa,
+    neuralPixelClassifier: !!cfg.neural,
+    metaWam: !!cfg.wam,
+    circumstantialFingerprints: !!cfg.circ,
+    rawWholeFileScan: !!cfg.rawScan,
+    formatParsers: { ...cfg.formats },
+    advancedNoModel: { ...cfg.advAuto },
+    advancedModel: {
+      noiseprint: {
+        enabled: !!cfg.advModel.noiseprint.on,
+        residualModelConfigured: !!cfg.advModel.noiseprint.residualUrl,
+        featureModelConfigured: !!cfg.advModel.noiseprint.featureUrl
+      },
+      diffusionReconstruction: {
+        enabled: !!cfg.advModel.diffrecon.on,
+        modelConfigured: !!cfg.advModel.diffrecon.url
+      },
+      diffusionPrint: {
+        enabled: !!cfg.advModel.diffprint.on,
+        modelConfigured: !!cfg.advModel.diffprint.url,
+        outputMode: cfg.advModel.diffprint.outputMode
+      },
+      gaussianEmbedding: {
+        enabled: !!cfg.advModel.gaussian.on,
+        modelConfigured: !!cfg.advModel.gaussian.url
+      },
+      editprint: {
+        enabled: !!cfg.advModel.editprint.on,
+        modelConfigured: !!cfg.advModel.editprint.url
+      },
+      prnu: {
+        enabled: !!cfg.advModel.prnu.on,
+        referenceFileCount: cfg.advModel.prnu.refFiles.length
+      }
+    }
+  };
+}
 
 /* ---------------- Per-file analysis ---------------- */
 async function analyzeOneFile(file, cfg, statusCb) {
@@ -1477,7 +1516,8 @@ async function analyzeOneFile(file, cfg, statusCb) {
     evidence: [], c2pa: [], validation: [], exif: [], iptc: [], text: [], struct: [], warnings: [], circumstantial: [],
     neural: {status:'not-run'}, watermarks: [],
     provenance: { containerDetected:false, referenceDetected:false, sdkAttempted:false, sdkLoaded:false, validationState:null, activeManifest:null, activeSourceTypes:[], ingredientSourceTypes:[], rawStore:null, watermarkActions:[], watermarkDeclarations:[], rawHints:[] },
-    advanced: { auto: [], model: [] }
+    advanced: { auto: [], model: [] },
+    analysisConfig: summarizeMethodConfig(cfg)
   };
 
   f.struct.push(['File name', file.name || '(unnamed)']);
@@ -1687,11 +1727,18 @@ function buildExport(result) {
   const { file, format, dimensions, verdict, f, videoInfo } = result;
   return {
     tool: 'PROVENANCE V4', generatedAt: new Date().toISOString(),
+    runtime: {
+      c2paWebVersion: C2PA_WEB_VERSION,
+      onnxRuntimeWebVersion: ORT_VERSION,
+      neuralModel: COMMUNITY_FORENSICS.fp32.label,
+      watermarkModel: WAM_MODEL.label
+    },
     file: { name: file.name || '(unnamed)', size: file.size, type: file.type, lastModified: file.lastModified || null },
     format: { id: format.id, name: format.name, mime: format.mime || null },
     dimensions, video: videoInfo, verdict,
     evidence: f.evidence, neural: f.neural, watermarks: f.watermarks,
     circumstantial: f.circumstantial, advanced: buildAdvancedExport(f.advanced),
+    analysisConfig: f.analysisConfig,
     provenance: {
       validationState: f.provenance.validationState,
       activeManifest: f.provenance.activeManifest,
@@ -1737,6 +1784,10 @@ function buildTextReport(j) {
   lines.push('Verdict: ' + j.verdict.stamp);
   lines.push('Confidence: ' + j.verdict.confidence);
   lines.push('Reason: ' + j.verdict.text); lines.push('');
+  lines.push('== ANALYSIS CONFIGURATION ==');
+  lines.push(safeJson(j.analysisConfig || {}, true));
+  lines.push('Runtime: ' + safeJson(j.runtime || {}));
+  lines.push('');
   lines.push('== EVIDENCE ==');
   if (!j.evidence.length) lines.push('(none)');
   for (const e of j.evidence) lines.push(`[${e.strength.toUpperCase()}${e.authenticated?' / AUTHENTICATED':''}] ${e.label}: ${e.value} — ${e.source}`);
