@@ -2300,14 +2300,58 @@ export function identifyAudioFormat(bytes, mime = '', name = '') {
   if (b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { id: 'webm', name: 'WebM/Matroska', mime: 'audio/webm' };
   if (b.length >= 12 && ascii(b, 4, 4) === 'ftyp') return { id: 'mp4', name: 'ISO BMFF / MP4 audio', mime: mime || 'audio/mp4' };
   if (b.length >= 3 && ascii(b, 0, 3) === 'ID3') return { id: 'mp3', name: 'MP3 / ID3', mime: 'audio/mpeg' };
+  if (b.length >= 2 && b[0] === 0xff && (b[1] & 0xf6) === 0xf0) return { id: 'aac', name: 'AAC / ADTS', mime: 'audio/aac' };
   if (b.length >= 2 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return { id: 'mp3', name: 'MP3', mime: 'audio/mpeg' };
   if (/wav/i.test(mime) || ext === 'wav') return { id: 'wav', name: 'WAV (by MIME/name)', mime: mime || 'audio/wav' };
   if (/mpeg|mp3/i.test(mime) || ext === 'mp3') return { id: 'mp3', name: 'MP3 (by MIME/name)', mime: mime || 'audio/mpeg' };
   if (/flac/i.test(mime) || ext === 'flac') return { id: 'flac', name: 'FLAC (by MIME/name)', mime: mime || 'audio/flac' };
   if (/ogg|opus/i.test(mime) || ['ogg', 'opus'].includes(ext)) return { id: 'ogg', name: 'Ogg/Opus (by MIME/name)', mime: mime || 'audio/ogg' };
   if (/webm/i.test(mime) || ext === 'webm') return { id: 'webm', name: 'WebM (by MIME/name)', mime: mime || 'audio/webm' };
-  if (/mp4|m4a|aac|alac/i.test(mime) || ['m4a', 'mp4', 'aac'].includes(ext)) return { id: 'mp4', name: 'MP4/M4A/AAC (by MIME/name)', mime: mime || 'audio/mp4' };
+  if (/aac/i.test(mime) || ext === 'aac') return { id: 'aac', name: 'AAC / ADTS (by MIME/name)', mime: mime || 'audio/aac' };
+  if (/mp4|m4a|alac/i.test(mime) || ['m4a', 'mp4'].includes(ext)) return { id: 'mp4', name: 'MP4/M4A (by MIME/name)', mime: mime || 'audio/mp4' };
   return { id: 'unknown', name: 'Unknown audio container', mime: mime || 'application/octet-stream' };
+}
+
+function parseAdts(bytes, containerRows, metadataRows, warnings) {
+  const sampleRates=[96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+  let p=0, frames=0, totalBlocks=0, sampleRate=null, channels=null, objectType=null, totalBytes=0;
+  while (p + 7 <= bytes.length) {
+    if (bytes[p] !== 0xff || (bytes[p+1] & 0xf6) !== 0xf0) {
+      if (!frames) { warnings.push('AAC/ADTS sync word was not found at the start of the stream.'); return; }
+      let q=p+1;
+      while (q+1<bytes.length && !(bytes[q]===0xff && (bytes[q+1]&0xf6)===0xf0)) q++;
+      if (q+1>=bytes.length) break;
+      warnings.push(`AAC/ADTS resynchronized after ${q-p} unexpected byte(s) at offset ${p}.`);
+      p=q;
+    }
+    const protectionAbsent=bytes[p+1]&1;
+    const sfIndex=(bytes[p+2]>>2)&0x0f;
+    const sr=sampleRates[sfIndex] || null;
+    const ch=((bytes[p+2]&1)<<2)|((bytes[p+3]>>6)&3);
+    const profile=((bytes[p+2]>>6)&3)+1;
+    const frameLen=((bytes[p+3]&3)<<11)|(bytes[p+4]<<3)|((bytes[p+5]>>5)&7);
+    const blocks=(bytes[p+6]&3)+1;
+    const headerLen=protectionAbsent?7:9;
+    if (!sr) { warnings.push(`AAC/ADTS frame at offset ${p} uses unsupported sample-rate index ${sfIndex}.`); break; }
+    if (frameLen < headerLen || p + frameLen > bytes.length) {
+      warnings.push(`AAC/ADTS frame at offset ${p} is truncated or has invalid length ${frameLen}.`);
+      break;
+    }
+    sampleRate ??= sr; channels ??= ch || null; objectType ??= profile;
+    if (sampleRate !== sr) warnings.push(`AAC/ADTS sample rate changes from ${sampleRate} to ${sr} Hz at frame ${frames+1}.`);
+    if (channels && ch && channels !== ch) warnings.push(`AAC/ADTS channel configuration changes from ${channels} to ${ch} at frame ${frames+1}.`);
+    frames++; totalBlocks+=blocks; totalBytes+=frameLen; p+=frameLen;
+  }
+  if (!frames) return;
+  const duration=sampleRate ? totalBlocks*1024/sampleRate : null;
+  const objectNames={1:'AAC Main',2:'AAC LC',3:'AAC SSR',4:'AAC LTP'};
+  containerRows.push(['AAC transport','ADTS']);
+  metadataRows.push(['AAC object type',objectNames[objectType] || `MPEG-4 Audio Object Type ${objectType}`]);
+  if (sampleRate) metadataRows.push(['AAC sample rate',String(sampleRate)]);
+  if (channels) metadataRows.push(['AAC channels',String(channels)]);
+  metadataRows.push(['AAC ADTS frames',String(frames)]);
+  if (duration != null) metadataRows.push(['AAC estimated duration',`${duration.toFixed(3)} s`]);
+  if (duration > 0) metadataRows.push(['AAC estimated bitrate',`${Math.round(totalBytes*8/duration)} bps`]);
 }
 
 function parseId3TextPayload(payload) {
@@ -2522,6 +2566,7 @@ export function inspectAudioContainer(input, info = {}) {
   const metadataRows = [];
   const warnings = [];
   if (format.id === 'wav') parseRiff(bytes, containerRows, metadataRows, warnings);
+  else if (format.id === 'aac') parseAdts(bytes, containerRows, metadataRows, warnings);
   else if (format.id === 'mp3') parseId3(bytes, metadataRows, warnings);
   else if (format.id === 'flac') parseFlac(bytes, containerRows, metadataRows, warnings);
   else if (format.id === 'ogg') parseOggComments(bytes, metadataRows);
@@ -2539,8 +2584,8 @@ export function inspectAudioContainer(input, info = {}) {
     return Number.isFinite(n) ? n : null;
   };
   const audio = {
-    sampleRate: toFinite(rowValue('Sample rate', 'FLAC sample rate')),
-    channels: toFinite(rowValue('Channels', 'FLAC channels')),
+    sampleRate: toFinite(rowValue('Sample rate', 'FLAC sample rate', 'AAC sample rate')),
+    channels: toFinite(rowValue('Channels', 'FLAC channels', 'AAC channels')),
     bitsPerSample: toFinite(rowValue('Bits/sample', 'FLAC bits/sample')),
     formatCode: toFinite(rowValue('WAV format code'))
   };
