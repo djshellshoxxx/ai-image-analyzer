@@ -1709,21 +1709,55 @@ async function analyzeOneFile(file, cfg, statusCb) {
   return { file, format, dimensions, verdict, f, videoInfo: videoInfo ? {duration:videoInfo.duration, framesSampled:videoInfo.canvases.length} : null };
 }
 
+function advancedModelSkipResult(f,id,name,summary,status='skipped-config') {
+  if ((f.advanced?.model || []).some(r => r.id === id)) return;
+  f.advanced.model.push({id,name,status,summary,score:null,calibrated:false});
+}
 function reportMissingAdvancedConfiguration(cfg, f, hasPixels) {
   const add = msg => addWarning(f, msg);
-  if (cfg.advModel.noiseprint.on && (!cfg.advModel.noiseprint.residualUrl || !cfg.advModel.noiseprint.featureUrl))
-    add('Noiseprint++ is enabled but both the residual-model URL and feature-encoder URL are required; the detector was not run.');
-  if (cfg.advModel.diffrecon.on && !cfg.advModel.diffrecon.url)
-    add('Diffusion reconstruction is enabled but no reconstructor model URL was supplied; the detector was not run.');
-  if (cfg.advModel.diffprint.on && !cfg.advModel.diffprint.url)
-    add('DiffusionPrint is enabled but no patch-classifier model URL was supplied; the detector was not run.');
-  if (cfg.advModel.gaussian.on && !cfg.advModel.gaussian.url)
-    add('Gaussian embedding is enabled but no frozen-encoder model URL was supplied; the detector was not run.');
-  if (cfg.advModel.editprint.on && !cfg.advModel.editprint.url)
-    add('Editprint is enabled but no ONNX model URL was supplied; the detector was not run.');
-  if (cfg.advModel.prnu.on && !cfg.advModel.prnu.refFiles.length)
-    add('PRNU is enabled but no same-camera reference photos were supplied; the detector was not run.');
-  if (!hasPixels && Object.values(cfg.advModel).some(v => v?.on))
+  const specs = [
+    {
+      id:'noiseprint-cluster', name:'Noiseprint++ residual clustering',
+      enabled:cfg.advModel.noiseprint.on,
+      configured:!!(cfg.advModel.noiseprint.residualUrl && cfg.advModel.noiseprint.featureUrl),
+      missing:'Noiseprint++ is enabled but both the residual-model URL and feature-encoder URL are required; the detector was not run.'
+    },
+    {
+      id:'diffusion-reconstruction', name:'Diffusion / Autoencoder Reconstruction Forensics',
+      enabled:cfg.advModel.diffrecon.on, configured:!!cfg.advModel.diffrecon.url,
+      missing:'Diffusion reconstruction is enabled but no reconstructor model URL was supplied; the detector was not run.'
+    },
+    {
+      id:'diffusionprint-localizer', name:'DiffusionPrint Patch Localization',
+      enabled:cfg.advModel.diffprint.on, configured:!!cfg.advModel.diffprint.url,
+      missing:'DiffusionPrint is enabled but no patch-classifier model URL was supplied; the detector was not run.'
+    },
+    {
+      id:'gaussian-embedding', name:'Prior-Conditioned Gaussian Embedding Detector',
+      enabled:cfg.advModel.gaussian.on, configured:!!cfg.advModel.gaussian.url,
+      missing:'Gaussian embedding is enabled but no frozen-encoder model URL was supplied; the detector was not run.'
+    },
+    {
+      id:'editprint', name:'Editprint Processing-History Fingerprint',
+      enabled:cfg.advModel.editprint.on, configured:!!cfg.advModel.editprint.url,
+      missing:'Editprint is enabled but no ONNX model URL was supplied; the detector was not run.'
+    },
+    {
+      id:'prnu', name:'PRNU Sensor Fingerprint',
+      enabled:cfg.advModel.prnu.on, configured:cfg.advModel.prnu.refFiles.length > 0,
+      missing:'PRNU is enabled but no same-camera reference photos were supplied; the detector was not run.'
+    }
+  ];
+  for (const spec of specs) {
+    if (!spec.enabled) continue;
+    if (!spec.configured) {
+      add(spec.missing);
+      advancedModelSkipResult(f,spec.id,spec.name,spec.missing,'skipped-config');
+    } else if (!hasPixels) {
+      advancedModelSkipResult(f,spec.id,spec.name,'Skipped because no decoded pixel canvas was available for this file.','skipped-no-pixels');
+    }
+  }
+  if (!hasPixels && specs.some(s => s.enabled))
     add('One or more model-backed/pixel forensic detectors were enabled, but this file has no decodable pixel canvas; those detectors were skipped.');
 }
 
