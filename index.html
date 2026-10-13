@@ -3184,7 +3184,13 @@ try {
 } catch (e) {
   console.error('Audio forensics module failed to mount:', e);
   const mountTarget = document.getElementById('audio-forensics');
-  if (mountTarget) mountTarget.innerHTML = `<div style="border:2px solid var(--bad);padding:14px;font-size:12px;color:var(--bad);">Audio module failed to mount: ${String((e && e.message) || e)}</div>`;
+  if (mountTarget) {
+    mountTarget.replaceChildren();
+    const errorBox = document.createElement('div');
+    errorBox.style.cssText = 'border:2px solid var(--bad);padding:14px;font-size:12px;color:var(--bad);';
+    errorBox.textContent = 'Audio module failed to mount: ' + String((e && e.message) || e);
+    mountTarget.append(errorBox);
+  }
 }
 </script>
 <script type="module" src="./ui-assistance.js"></script>\n</body>
