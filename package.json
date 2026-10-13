@@ -1,0 +1,8 @@
+{
+  "name": "ai-image-analyzer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/audit.mjs"
+  }
+}
