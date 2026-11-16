@@ -55,6 +55,7 @@ The application is intentionally deployable as a static GitHub Pages site. The f
 Run the structural/syntax audit with:
 
 ```bash
+npm ci
 npm test
 ```
 

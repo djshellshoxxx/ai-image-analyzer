@@ -1,3 +1,4 @@
+import { parse } from 'parse5';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import os from 'node:os';
@@ -7,13 +8,21 @@ import { pathToFileURL } from 'node:url';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
+function* elements(node) {
+  if (node.tagName) yield node;
+  for (const child of node.childNodes ?? []) yield* elements(child);
+}
+
+const dom = [...elements(parse(html))];
+const ids = dom.flatMap(node => node.attrs.filter(attr => attr.name === 'id').map(attr => attr.value));
+
 for (const id of [
   'm-c2pa','m-neural','m-wam','m-circ','m-spectral','m-cfa','m-lota',
   'm-colorrestore','m-colordist','m-jpegfp','m-genspec','m-rawscan',
   'm-bmp','m-svg','m-jxl','m-mp4','m-raw','m-noiseprint','m-diffrecon',
   'm-diffprint','m-gaussian','m-editprint','m-prnu','file','drop','results'
 ]) {
-  assert.ok(html.includes('id="' + id + '"'), 'missing UI element ' + id);
+  assert.ok(ids.includes(id), 'missing UI element ' + id);
 }
 
 for (const moduleName of [
@@ -63,7 +72,6 @@ assert.ok(html.includes("r.neural?.status !== 'disabled'"), 'intentionally disab
 assert.ok(html.includes("typeof window !== 'undefined'"), 'audio module auto-mount must be guarded outside browsers');
 assert.ok(html.includes("if(/\\.dng$/i.test(name))return'image/x-adobe-dng'"), 'DNG must use the correct C2PA MIME fallback');
 
-const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
 const duplicateIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
 assert.deepEqual(duplicateIds, [], 'duplicate DOM ids: ' + duplicateIds.join(', '));
 
