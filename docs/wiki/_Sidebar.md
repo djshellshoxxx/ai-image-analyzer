@@ -1,5 +1,5 @@
 **ai-image-analyzer**
 
-- [Home](Home)
-- [User Guide](User-Guide)
-- [Codebase Map](Codebase-Map)
+- [Home](Home.md)
+- [User Guide](User-Guide.md)
+- [Codebase Map](Codebase-Map.md)
